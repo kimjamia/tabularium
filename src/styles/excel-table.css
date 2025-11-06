@@ -1,0 +1,203 @@
+.excel-table {
+  --excel-table-border-color: #d0d7de;
+  --excel-table-header-bg: #f6f8fa;
+  --excel-table-cell-bg: #ffffff;
+  --excel-table-selection-border: #1f6feb;
+  --excel-table-selection-fill: rgba(31, 111, 235, 0.15);
+  --excel-table-fill-preview: rgba(31, 111, 235, 0.25);
+  --excel-table-error-color: #d93026;
+  --excel-table-placeholder-color: #6c757d;
+  display: flex;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--excel-table-cell-bg);
+  outline: none;
+}
+
+.excel-table__viewport {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--excel-table-border-color);
+}
+
+.excel-table__grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  width: max-content;
+  table-layout: fixed;
+  font-size: 14px;
+  color: #1f2328;
+}
+
+.excel-table__grid thead th {
+  position: sticky;
+  top: 0;
+  background: var(--excel-table-header-bg);
+  z-index: 2;
+  border-bottom: 1px solid var(--excel-table-border-color);
+  border-right: 1px solid var(--excel-table-border-color);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.excel-table__header-cell.is-frozen {
+  z-index: 4 !important;
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
+}
+
+.excel-table__filter {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.excel-table__filter-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  font-size: 12px;
+  border: 1px solid var(--excel-table-border-color);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.excel-table__grid tbody tr {
+  background: var(--excel-table-cell-bg);
+}
+
+.excel-table__grid tbody tr.is-placeholder {
+  color: var(--excel-table-placeholder-color);
+}
+
+.excel-table__cell {
+  position: relative;
+  min-width: 120px;
+  border-right: 1px solid var(--excel-table-border-color);
+  border-bottom: 1px solid var(--excel-table-border-color);
+  padding: 0;
+  background: inherit;
+}
+
+.excel-table__cell-content {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  position: relative;
+  gap: 4px;
+}
+
+.excel-table__cell input,
+.excel-table__cell select {
+  font-size: 13px;
+}
+
+.excel-table__input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  color: inherit;
+}
+
+.excel-table__input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--excel-table-selection-border);
+  border-radius: 3px;
+}
+
+.excel-table__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--excel-table-border-color);
+  border-radius: 3px;
+  background: #f6f8fa;
+  cursor: pointer;
+}
+
+.excel-table__button:hover {
+  background: #e9ecef;
+}
+
+.excel-table__links {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.excel-table__link {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.excel-table__link:hover {
+  text-decoration: underline;
+}
+
+.excel-table__cell.has-error {
+  box-shadow: inset 0 0 0 1px var(--excel-table-error-color);
+}
+
+.excel-table__cell-errors {
+  position: absolute;
+  bottom: 2px;
+  left: 6px;
+  right: 6px;
+  font-size: 11px;
+  color: var(--excel-table-error-color);
+  pointer-events: none;
+}
+
+.excel-table__selection,
+.excel-table__fill-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid var(--excel-table-selection-border);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.excel-table__selection {
+  background: var(--excel-table-selection-fill);
+}
+
+.excel-table__fill-preview {
+  background: var(--excel-table-fill-preview);
+  border-style: dashed;
+}
+
+.excel-table__fill-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  bottom: 0;
+  right: 0;
+  transform: translate(50%, 50%);
+  background: var(--excel-table-selection-border);
+  border-radius: 1px;
+  cursor: crosshair;
+}
+
+.excel-table__cell.is-selected {
+  background: rgba(31, 111, 235, 0.08);
+}
+
+.excel-table__cell.is-placeholder-cell .excel-table__input {
+  color: var(--excel-table-placeholder-color);
+}
+
+.excel-table__grid tbody tr:last-child .excel-table__cell {
+  border-bottom: 1px solid var(--excel-table-border-color);
+}
