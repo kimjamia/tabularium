@@ -1,0 +1,40 @@
+{
+  "name": "vue3-excel-table",
+  "version": "0.1.0",
+  "description": "Excel-like data grid component for Vue 3 with pure JS core",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "require": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "lint": "eslint --ext .js,.vue src",
+    "build": "vite build",
+    "dev": "vite",
+    "test": "vitest"
+  },
+  "keywords": [
+    "vue3",
+    "excel",
+    "data-grid",
+    "table",
+    "component"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.27.0",
+    "sass": "^1.77.6",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.1"
+  }
+}
