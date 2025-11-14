@@ -1,5 +1,8 @@
 # Vue3 Excel-Like Table
 
+> [!WARNING]
+> This project is fully vibe-coded.
+
 `vue3-excel-table` is an Excel-inspired data grid for Vue 3. It combines a pure JavaScript data model with a Vue wrapper so you can reuse the core logic elsewhere. Paste multi-cell selections, drag-fill values, attach dropdowns with display/value pairs, add inline buttons and checkbox columns, validate data (including column-level uniqueness), and keep an empty row ready for new entries—just like a spreadsheet.
 
 ## Features
@@ -17,6 +20,7 @@
 
 ## Installation
 
+NOT YET AVAILABLE
 ```bash
 npm install vue3-excel-table
 # or
