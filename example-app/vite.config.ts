@@ -13,7 +13,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Alias to the library source so it gets bundled with the app
       'vue3-excel-table': fileURLToPath(new URL('../src', import.meta.url))
     },
+  },
+  build: {
+    // Vite bundles all imported modules by default, including the library via the alias
+    // This ensures the Excel component library is included in the production bundle
+  },
+  optimizeDeps: {
+    // Pre-bundle the library for faster dev server startup
+    include: ['vue3-excel-table'],
   },
 })
