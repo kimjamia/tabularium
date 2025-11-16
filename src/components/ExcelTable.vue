@@ -15,9 +15,25 @@
               class="excel-table__header-cell"
               :class="{ 'is-frozen': isColumnFrozen(columnIndex) }"
               :style="getColumnStyle(columnIndex)"
+              :aria-sort="getAriaSort(column)"
             >
-              <div class="excel-table__header-content">
+              <div
+                class="excel-table__header-content"
+                :class="getHeaderContentClass(column)"
+                :tabindex="column.sortable ? 0 : undefined"
+                :role="column.sortable ? 'button' : undefined"
+                @click="() => onHeaderClick(column)"
+                @keydown.enter.prevent="(event) => onHeaderKeydown(event, column)"
+                @keydown.space.prevent="(event) => onHeaderKeydown(event, column)"
+              >
                 <span>{{ column.label ?? column.title ?? column.key }}</span>
+                <span
+                  v-if="getColumnSortDirection(column)"
+                  class="excel-table__sort-indicator"
+                  aria-hidden="true"
+                >
+                  {{ getColumnSortDirection(column) === 'asc' ? '▲' : '▼' }}
+                </span>
               </div>
               <div v-if="column.filterable" class="excel-table__filter">
                 <template v-if="column.type === 'number'">
@@ -67,7 +83,7 @@
               :style="getCellStyle(columnIndex)"
               @mousedown="(event) => onCellMouseDown(event, entry, column, viewRowIndex, columnIndex)"
               @mouseenter="(event) => onCellMouseEnter(event, entry, column, viewRowIndex, columnIndex)"
-              @paste.prevent="(event) => onCellPaste(event, entry, column, columnIndex)"
+              @paste.prevent="(event) => onCellPaste(event, entry, column)"
             >
               <div class="excel-table__cell-content">
                 <template v-if="column.type === 'checkbox'">
@@ -141,7 +157,7 @@
                 <span
                   v-if="selection && isBottomRightCell(entry.index, columnIndex)"
                   class="excel-table__fill-handle"
-                  @mousedown.stop="(event) => startFillDrag(event)"
+                  @mousedown.stop="startFillDrag"
                 ></span>
               </div>
 
@@ -179,7 +195,6 @@ import {
   watch,
   onMounted,
   onBeforeUnmount,
-  nextTick,
 } from 'vue';
 import { TableModel } from '../core/TableModel.js';
 import { CHANGE_SOURCES } from '../core/constants.js';
@@ -224,6 +239,7 @@ const model = ref(new TableModel({
 
 const viewRows = ref(model.value.getViewRows());
 const errors = ref(model.value.getErrorsGrouped());
+const sortState = ref(model.value.getSortState());
 
 const selection = ref(null);
 const anchorCell = ref(null);
@@ -256,8 +272,9 @@ const columnOffsets = computed(() => {
 let unsubscribe = model.value.registerChangeListener((summary) => {
   errors.value = summary.errors;
   viewRows.value = model.value.getViewRows();
+  sortState.value = summary.sortState ?? model.value.getSortState();
   emit('change', summary);
-  if (summary.type !== 'filter') {
+  if (summary.type !== 'filter' && summary.type !== 'sort') {
     emit('update:modelValue', model.value.getRawData());
   }
 });
@@ -275,11 +292,13 @@ function resetModel(newColumns, newOptions) {
 
   viewRows.value = model.value.getViewRows();
   errors.value = model.value.getErrorsGrouped();
+  sortState.value = model.value.getSortState();
   unsubscribe = model.value.registerChangeListener((summary) => {
     errors.value = summary.errors;
     viewRows.value = model.value.getViewRows();
+    sortState.value = summary.sortState ?? model.value.getSortState();
     emit('change', summary);
-    if (summary.type !== 'filter') {
+    if (summary.type !== 'filter' && summary.type !== 'sort') {
       emit('update:modelValue', model.value.getRawData());
     }
   });
@@ -302,6 +321,7 @@ watch(
       model.value.setData(next ?? [], { silent: true });
       viewRows.value = model.value.getViewRows();
       errors.value = model.value.getErrorsGrouped();
+      sortState.value = model.value.getSortState();
     }
   },
   { deep: true }
@@ -395,6 +415,69 @@ function getColumnStyle(columnIndex) {
   }
 
   return styles;
+}
+
+function getColumnSortDirection(column) {
+  if (!column || !sortState.value) {
+    return null;
+  }
+  return sortState.value.columnKey === column.key ? sortState.value.direction : null;
+}
+
+function getNextSortDirection(column) {
+  const current = getColumnSortDirection(column);
+  if (!current) {
+    return 'asc';
+  }
+  if (current === 'asc') {
+    return 'desc';
+  }
+  return null;
+}
+
+function onHeaderClick(column) {
+  if (!column?.sortable) {
+    return;
+  }
+  const nextDirection = getNextSortDirection(column);
+  if (!nextDirection) {
+    model.value.clearSort();
+  } else {
+    model.value.setSort(column.key, nextDirection);
+  }
+}
+
+function onHeaderKeydown(event, column) {
+  if (!column?.sortable) {
+    return;
+  }
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    onHeaderClick(column);
+  }
+}
+
+function getAriaSort(column) {
+  if (!column?.sortable) {
+    return 'none';
+  }
+  const direction = getColumnSortDirection(column);
+  if (direction === 'asc') {
+    return 'ascending';
+  }
+  if (direction === 'desc') {
+    return 'descending';
+  }
+  return 'none';
+}
+
+function getHeaderContentClass(column) {
+  const direction = getColumnSortDirection(column);
+  return {
+    'is-sortable': Boolean(column?.sortable),
+    'is-sorted': Boolean(direction),
+    'is-sorted-desc': direction === 'desc',
+  };
 }
 
 function getCellStyle(columnIndex) {
@@ -592,7 +675,7 @@ function isBottomRightCell(rowIndex, columnIndex) {
   return selection.value.endRow === rowIndex && selection.value.endCol === columnIndex;
 }
 
-function startFillDrag(event) {
+function startFillDrag() {
   if (!selection.value) {
     return;
   }
@@ -677,7 +760,7 @@ function getCellElement(rowIndex, columnIndex) {
   return row.querySelectorAll('td')[columnIndex] ?? null;
 }
 
-function onCellPaste(event, entry, column, columnIndex) {
+function onCellPaste(event, entry, column) {
   const text = event.clipboardData.getData('text/plain');
   if (!text) {
     return;
