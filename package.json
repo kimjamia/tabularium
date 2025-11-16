@@ -15,7 +15,7 @@
     "lint": "eslint --ext .js,.vue src",
     "build": "vite build",
     "dev": "vite",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "keywords": [
     "vue3",
