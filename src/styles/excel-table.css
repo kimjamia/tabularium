@@ -45,6 +45,32 @@
   white-space: nowrap;
 }
 
+.excel-table__header-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.excel-table__header-content.is-sortable {
+  cursor: pointer;
+}
+
+.excel-table__header-content.is-sortable:focus-visible {
+  outline: 2px solid var(--excel-table-selection-border);
+  border-radius: 4px;
+  outline-offset: 2px;
+}
+
+.excel-table__header-content.is-sorted {
+  color: var(--excel-table-selection-border);
+}
+
+.excel-table__sort-indicator {
+  font-size: 11px;
+  line-height: 1;
+}
+
 .excel-table__header-cell.is-frozen {
   z-index: 4 !important;
   box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
