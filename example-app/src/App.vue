@@ -8,6 +8,7 @@ const columns = [
     key: 'name',
     label: 'Name',
     width: 200,
+    unique: true,
   },
   {
     key: 'age',
