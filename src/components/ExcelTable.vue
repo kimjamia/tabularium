@@ -607,11 +607,15 @@ function updateFillPreview(rowIndex, columnIndex) {
 
   const preview = { ...selection.value };
 
-  if (rowIndex > selection.value.endRow) {
+  if (rowIndex < selection.value.startRow) {
+    preview.startRow = rowIndex;
+  } else if (rowIndex > selection.value.endRow) {
     preview.endRow = rowIndex;
   }
 
-  if (columnIndex > selection.value.endCol) {
+  if (columnIndex < selection.value.startCol) {
+    preview.startCol = columnIndex;
+  } else if (columnIndex > selection.value.endCol) {
     preview.endCol = columnIndex;
   }
 
@@ -626,10 +630,17 @@ function applyFill() {
   }
 
   model.value.fill(selectionRange, targetRange, { source: CHANGE_SOURCES.FILL });
-  selection.value = normalizeSelection(
-    { rowIndex: selectionRange.startRow, columnIndex: selectionRange.startCol },
-    { rowIndex: targetRange.endRow, columnIndex: targetRange.endCol },
+  const normalized = normalizeSelection(
+    {
+      rowIndex: Math.min(selectionRange.startRow, targetRange.startRow ?? selectionRange.startRow),
+      columnIndex: Math.min(selectionRange.startCol, targetRange.startCol ?? selectionRange.startCol),
+    },
+    {
+      rowIndex: Math.max(selectionRange.endRow, targetRange.endRow ?? selectionRange.endRow),
+      columnIndex: Math.max(selectionRange.endCol, targetRange.endCol ?? selectionRange.endCol),
+    },
   );
+  selection.value = normalized;
   fillPreview.value = null;
 }
 
