@@ -276,69 +276,119 @@ export class TableModel {
     return this._applyChangeSet(changes, { source, type: 'paste' });
   }
 
-  fill(selection, target, { source = CHANGE_SOURCES.FILL } = {}) {
-    if (!selection || !target) {
-      return null;
-    }
-
-    const { startRow, endRow, startCol, endCol } = selection;
-    const { endRow: targetEndRow = endRow, endCol: targetEndCol = endCol } = target;
-
-    const baseRows = [];
-    for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
-      const rowValues = [];
-      for (let colIndex = startCol; colIndex <= endCol; colIndex += 1) {
-        const column = this.columns[colIndex];
-        const value = this._ensureRow(rowIndex)[column.key];
-        rowValues.push(value);
+    fill(selection, target, { source = CHANGE_SOURCES.FILL } = {}) {
+      if (!selection || !target) {
+        return null;
       }
-      baseRows.push(rowValues);
-    }
 
-    const changes = [];
+      const {
+        startRow,
+        endRow,
+        startCol,
+        endCol,
+      } = selection;
 
-    if (targetEndRow > endRow) {
-      // vertical fill downwards
-      for (let rowIndex = endRow + 1; rowIndex <= targetEndRow; rowIndex += 1) {
-        const patternRow = baseRows[(rowIndex - startRow) % baseRows.length];
-        patternRow.forEach((value, offset) => {
-          const column = this.columns[startCol + offset];
-          if (column && column.editable) {
-            changes.push({
-              rowIndex,
-              columnKey: column.key,
-              value,
-            });
+      if (
+        [startRow, endRow, startCol, endCol].some((value) => typeof value !== 'number')
+        || startRow > endRow
+        || startCol > endCol
+      ) {
+        return null;
+      }
+
+      const columnCount = this.columns.length;
+      if (columnCount === 0) {
+        return null;
+      }
+
+      const resolveIndex = (value, fallback) => (typeof value === 'number' ? value : fallback);
+
+      const rawTargetStartRow = resolveIndex(target.startRow, startRow);
+      const rawTargetEndRow = resolveIndex(target.endRow, endRow);
+      const rawTargetStartCol = resolveIndex(target.startCol, startCol);
+      const rawTargetEndCol = resolveIndex(target.endCol, endCol);
+
+      const resolvedTargetStartRow = Math.max(0, rawTargetStartRow);
+      const resolvedTargetEndRow = Math.max(resolvedTargetStartRow, Math.max(0, rawTargetEndRow));
+
+      const resolvedTargetStartCol = Math.max(0, Math.min(columnCount - 1, rawTargetStartCol));
+      const resolvedTargetEndCol = Math.max(
+        resolvedTargetStartCol,
+        Math.min(columnCount - 1, Math.max(0, rawTargetEndCol)),
+      );
+
+      const baseRows = [];
+      for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+        const rowValues = [];
+        for (let colIndex = startCol; colIndex <= endCol; colIndex += 1) {
+          const column = this.columns[colIndex];
+          if (!column) {
+            continue;
           }
-        });
+          const value = this._ensureRow(rowIndex)[column.key];
+          rowValues.push(value);
+        }
+        if (rowValues.length > 0) {
+          baseRows.push(rowValues);
+        }
       }
-    }
 
-    if (targetEndCol > endCol) {
-      // horizontal fill to the right
-      for (let colIndex = endCol + 1; colIndex <= targetEndCol; colIndex += 1) {
-        const column = this.columns[colIndex];
-        if (!column || !column.editable) {
+      if (baseRows.length === 0 || baseRows[0].length === 0) {
+        return null;
+      }
+
+      const getPatternValue = (rowIndex, colIndex) => {
+        const rowDelta = rowIndex - startRow;
+        const colDelta = colIndex - startCol;
+        const rowPatternIndex = ((rowDelta % baseRows.length) + baseRows.length) % baseRows.length;
+        const colPatternIndex = ((colDelta % baseRows[0].length) + baseRows[0].length) % baseRows[0].length;
+        return baseRows[rowPatternIndex][colPatternIndex];
+      };
+
+      const rowLoopStart = Math.max(0, Math.min(startRow, resolvedTargetStartRow));
+      const rowLoopEnd = Math.max(endRow, resolvedTargetEndRow);
+      const colLoopStart = Math.max(0, Math.min(startCol, resolvedTargetStartCol));
+      const colLoopEnd = Math.min(columnCount - 1, Math.max(endCol, resolvedTargetEndCol));
+
+      const changes = [];
+
+      for (let rowIndex = rowLoopStart; rowIndex <= rowLoopEnd; rowIndex += 1) {
+        if (rowIndex < resolvedTargetStartRow || rowIndex > resolvedTargetEndRow) {
           continue;
         }
 
-        for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
-          const patternValue = baseRows[(rowIndex - startRow) % baseRows.length][(colIndex - startCol) % baseRows[0].length];
+        const inSelectionRow = rowIndex >= startRow && rowIndex <= endRow;
+
+        for (let colIndex = colLoopStart; colIndex <= colLoopEnd; colIndex += 1) {
+          if (colIndex < resolvedTargetStartCol || colIndex > resolvedTargetEndCol) {
+            continue;
+          }
+
+          const column = this.columns[colIndex];
+          if (!column || column.editable === false) {
+            continue;
+          }
+
+          const inSelectionCol = colIndex >= startCol && colIndex <= endCol;
+          if (inSelectionRow && inSelectionCol) {
+            continue;
+          }
+
+          const value = getPatternValue(rowIndex, colIndex);
           changes.push({
             rowIndex,
             columnKey: column.key,
-            value: patternValue,
+            value,
           });
         }
       }
-    }
 
-    if (changes.length === 0) {
-      return null;
-    }
+      if (changes.length === 0) {
+        return null;
+      }
 
-    return this._applyChangeSet(changes, { source, type: 'fill' });
-  }
+      return this._applyChangeSet(changes, { source, type: 'fill' });
+    }
 
   undo() {
     const entry = this.undoStack.pop();
