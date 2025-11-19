@@ -97,55 +97,57 @@
               @mouseenter="(event) => onCellMouseEnter(event, entry, column, viewRowIndex, columnIndex)"
               @paste.prevent="(event) => onCellPaste(event, entry, column)"
             >
-              <div class="excel-table__cell-content">
-                <template v-if="column.type === 'checkbox'">
-                  <input
-                    type="checkbox"
-                    :checked="Boolean(entry.data[column.key])"
-                    @change="(event) => onCheckboxChange(entry, column, event.target.checked)"
-                  >
-                </template>
-
-                <template v-else-if="column.type === 'dropdown'">
-                  <select
-                    class="excel-table__input"
-                    :value="entry.data[column.key] ?? ''"
-                    @change="(event) => onDropdownChange(entry, column, event.target.value)"
-                  >
-                    <option
-                      v-if="column.dropdown?.allowEmpty"
-                      value=""
+                <div class="excel-table__cell-content">
+                  <template v-if="column.type === 'checkbox'">
+                    <input
+                      type="checkbox"
+                      :checked="Boolean(entry.data[column.key])"
+                      @change="(event) => onCheckboxChange(entry, column, event.target.checked)"
+                      @keydown="(event) => onCellInputKeyDown(event, entry.index, columnIndex, viewRowIndex)"
                     >
-                      {{ column.dropdown.emptyLabel ?? 'Select…' }}
-                    </option>
-                    <option
-                      v-for="option in getDropdownOptions(column)"
-                      :key="getDropdownOptionKey(column, option)"
-                      :value="getDropdownOptionValue(column, option)"
+                  </template>
+
+                  <template v-else-if="column.type === 'dropdown'">
+                    <select
+                      class="excel-table__input"
+                      :value="entry.data[column.key] ?? ''"
+                      @change="(event) => onDropdownChange(entry, column, event.target.value)"
                     >
-                      {{ getDropdownOptionLabel(column, option) }}
-                    </option>
-                  </select>
-                </template>
+                      <option
+                        v-if="column.dropdown?.allowEmpty"
+                        value=""
+                      >
+                        {{ column.dropdown.emptyLabel ?? 'Select…' }}
+                      </option>
+                      <option
+                        v-for="option in getDropdownOptions(column)"
+                        :key="getDropdownOptionKey(column, option)"
+                        :value="getDropdownOptionValue(column, option)"
+                      >
+                        {{ getDropdownOptionLabel(column, option) }}
+                      </option>
+                    </select>
+                  </template>
 
-                <template v-else-if="column.type === 'number'">
-                  <input
-                    class="excel-table__input"
-                    type="number"
-                    :value="entry.data[column.key] ?? ''"
-                    @input="(event) => onInputChange(entry, column, event.target.value)"
-                  >
-                </template>
+                  <template v-else-if="column.type === 'number'">
+                    <input
+                      class="excel-table__input"
+                      type="number"
+                      :value="entry.data[column.key] ?? ''"
+                      @input="(event) => onInputChange(entry, column, event.target.value)"
+                      @keydown="(event) => onCellInputKeyDown(event, entry.index, columnIndex, viewRowIndex)"
+                    >
+                  </template>
 
-                <template v-else-if="column.type === 'button'">
-                  <button
-                    type="button"
-                    class="excel-table__button"
-                    @click.stop="() => onButtonClick(entry, column)"
-                  >
-                    {{ getButtonLabel(entry, column) }}
-                  </button>
-                </template>
+                  <template v-else-if="column.type === 'button'">
+                    <button
+                      type="button"
+                      class="excel-table__button"
+                      @click.stop="() => onButtonClick(entry, column)"
+                    >
+                      {{ getButtonLabel(entry, column) }}
+                    </button>
+                  </template>
 
                 <template v-else-if="column.type === 'links'">
                   <div class="excel-table__links">
@@ -168,6 +170,7 @@
                     type="text"
                     :value="entry.data[column.key] ?? ''"
                     @input="(event) => onInputChange(entry, column, event.target.value)"
+                      @keydown="(event) => onCellInputKeyDown(event, entry.index, columnIndex, viewRowIndex)"
                   >
                 </template>
 
@@ -208,14 +211,15 @@
 </template>
 
 <script setup>
-import {
-  ref,
-  reactive,
-  computed,
-  watch,
-  onMounted,
-  onBeforeUnmount,
-} from 'vue';
+  import {
+    ref,
+    reactive,
+    computed,
+    watch,
+    onMounted,
+    onBeforeUnmount,
+    nextTick,
+  } from 'vue';
 import { TableModel } from '../core/TableModel.js';
 import { CHANGE_SOURCES } from '../core/constants.js';
 import '../styles/excel-table.css';
@@ -750,6 +754,119 @@ function getCellElement(rowIndex, columnIndex) {
   }
 
   return row.querySelectorAll('td')[columnIndex] ?? null;
+}
+
+function onCellInputKeyDown(event, rowIndex, columnIndex, viewRowIndex) {
+  if (!event || typeof viewRowIndex !== 'number') {
+    return;
+  }
+
+  const { key, shiftKey } = event;
+  const isForwardTab = key === 'Tab' && !shiftKey;
+  const isBackwardTab = key === 'Tab' && shiftKey;
+
+  let rowDelta = 0;
+  let columnDelta = 0;
+
+  if (key === 'Enter' || key === 'ArrowDown') {
+    rowDelta = 1;
+  } else if (key === 'ArrowUp') {
+    rowDelta = -1;
+  } else if (key === 'ArrowRight' || isForwardTab) {
+    columnDelta = 1;
+  } else if (key === 'ArrowLeft' || isBackwardTab) {
+    columnDelta = -1;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  moveFocusByDelta({
+    fromViewRowIndex: viewRowIndex,
+    fromColumnIndex: columnIndex,
+    rowDelta,
+    columnDelta,
+  });
+}
+
+function moveFocusByDelta({
+  fromViewRowIndex,
+  fromColumnIndex,
+  rowDelta = 0,
+  columnDelta = 0,
+}) {
+  const targetViewRowIndex = fromViewRowIndex + rowDelta;
+  const targetColumnIndex = fromColumnIndex + columnDelta;
+
+  if (targetViewRowIndex < 0 || targetViewRowIndex >= viewRows.value.length) {
+    return;
+  }
+
+  if (targetColumnIndex < 0 || targetColumnIndex >= internalColumns.value.length) {
+    return;
+  }
+
+  const targetRow = viewRows.value[targetViewRowIndex];
+  if (!targetRow) {
+    return;
+  }
+
+  focusCellAt(targetRow.index, targetColumnIndex);
+}
+
+function focusCellAt(rowIndex, columnIndex) {
+  const cellRef = { rowIndex, columnIndex };
+  anchorCell.value = cellRef;
+  selection.value = normalizeSelection(cellRef, cellRef);
+
+  nextTick(() => {
+    const cellElement = getCellElement(rowIndex, columnIndex);
+    if (!cellElement) {
+      return;
+    }
+
+    scrollCellIntoView(cellElement);
+    const focusTarget = findFocusableContent(cellElement);
+
+    if (focusTarget) {
+      focusTarget.focus();
+      if (
+        typeof focusTarget.select === 'function'
+        && focusTarget.tagName === 'INPUT'
+        && focusTarget.type !== 'checkbox'
+      ) {
+        focusTarget.select();
+      }
+      return;
+    }
+
+    if (!cellElement.hasAttribute('tabindex')) {
+      cellElement.setAttribute('tabindex', '-1');
+    }
+    cellElement.focus();
+  });
+}
+
+function scrollCellIntoView(cellElement) {
+  if (!cellElement) {
+    return;
+  }
+
+  try {
+    cellElement.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  } catch (error) {
+    // no-op
+  }
+}
+
+function findFocusableContent(cellElement) {
+  if (!cellElement) {
+    return null;
+  }
+
+  return cellElement.querySelector('input, select, textarea, button, [contenteditable="true"]');
 }
 
 function onCellPaste(event, entry, column) {
