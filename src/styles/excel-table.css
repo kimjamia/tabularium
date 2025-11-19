@@ -206,7 +206,7 @@
 }
 
 .excel-table__selection {
-  background: var(--excel-table-selection-fill);
+  background: transparent;
 }
 
 .excel-table__fill-preview {
@@ -227,7 +227,7 @@
 }
 
 .excel-table__cell.is-selected {
-  background: rgba(31, 111, 235, 0.08);
+  background: transparent;
 }
 
 .excel-table__cell.is-placeholder-cell .excel-table__input {
