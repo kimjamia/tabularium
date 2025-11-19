@@ -145,8 +145,6 @@
 
 .excel-table__input:focus {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--excel-table-selection-border);
-  border-radius: 3px;
 }
 
 .excel-table__button {
@@ -184,6 +182,10 @@
   box-shadow: inset 0 0 0 1px var(--excel-table-error-color);
 }
 
+.excel-table__cell:not(.has-error):focus-within {
+  box-shadow: inset 0 0 0 1px var(--excel-table-selection-border);
+}
+
 .excel-table__cell-errors {
   position: absolute;
   bottom: 2px;
@@ -204,7 +206,7 @@
 }
 
 .excel-table__selection {
-  background: var(--excel-table-selection-fill);
+  background: transparent;
 }
 
 .excel-table__fill-preview {
@@ -225,7 +227,7 @@
 }
 
 .excel-table__cell.is-selected {
-  background: rgba(31, 111, 235, 0.08);
+  background: transparent;
 }
 
 .excel-table__cell.is-placeholder-cell .excel-table__input {
