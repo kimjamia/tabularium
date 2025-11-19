@@ -14,4 +14,5 @@ export const CHANGE_SOURCES = {
   FILL: 'fill',
   PROGRAMMATIC: 'programmatic',
   UNDO: 'undo',
+  MERGE: 'merge',
 };

@@ -963,4 +963,12 @@ function clearEditingState() {
     delete editingValues[key];
   });
 }
+
+function mergeRows(data, options) {
+  return model.value.mergeRows(data, options);
+}
+
+defineExpose({
+  mergeRows,
+});
 </script>

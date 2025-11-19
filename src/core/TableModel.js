@@ -80,6 +80,27 @@ function makeCellKey(rowIndex, columnKey) {
   return `${rowIndex}:${columnKey}`;
 }
 
+function serializeMergeKey(row, keyColumns) {
+  return keyColumns
+    .map((key) => {
+      const value = row?.[key];
+      if (value === null || typeof value === 'undefined') {
+        return '__NULL__';
+      }
+      if (typeof value === 'string') {
+        return `str:${value}`;
+      }
+      if (typeof value === 'number') {
+        return `num:${value}`;
+      }
+      if (typeof value === 'boolean') {
+        return `bool:${value}`;
+      }
+      return `json:${JSON.stringify(value)}`;
+    })
+    .join('||');
+}
+
 function defaultColumnFactory(column, index) {
   if (!column.key && !column.field && !column.id) {
     throw new Error(`Column at index ${index} must provide a key/field/id`);
@@ -412,6 +433,15 @@ export class TableModel {
       return null;
     }
 
+    if (entry.snapshot) {
+      this.redoStack.push(entry);
+      return this._applySnapshotRows(entry.snapshot.before, {
+        type: entry.type,
+        source: CHANGE_SOURCES.UNDO,
+        meta: entry.meta,
+      });
+    }
+
     const inverse = entry.changes.map(({ rowIndex, columnKey, from }) => ({
       rowIndex,
       columnKey,
@@ -431,6 +461,15 @@ export class TableModel {
     const entry = this.redoStack.pop();
     if (!entry) {
       return null;
+    }
+
+    if (entry.snapshot) {
+      this.undoStack.push(entry);
+      return this._applySnapshotRows(entry.snapshot.after, {
+        type: entry.type,
+        source: entry.source ?? CHANGE_SOURCES.EDIT,
+        meta: entry.meta,
+      });
     }
 
     const forward = entry.changes.map(({ rowIndex, columnKey, to }) => ({
@@ -481,6 +520,104 @@ export class TableModel {
     }
 
     return rawValue;
+  }
+
+  mergeRows(sourceRows, { updateColumns = [], source = CHANGE_SOURCES.MERGE } = {}) {
+    if (!Array.isArray(sourceRows)) {
+      throw new Error('mergeRows expects an array of source rows');
+    }
+
+    const validUpdateColumns = updateColumns
+      .filter((key) => this.columnIndex.has(key));
+
+    if (validUpdateColumns.length === 0) {
+      throw new Error('mergeRows requires at least one valid column to update');
+    }
+
+    const updateColumnSet = new Set(validUpdateColumns);
+    const keyColumns = this.columns
+      .map((column) => column.key)
+      .filter((key) => !updateColumnSet.has(key));
+
+    if (keyColumns.length === 0) {
+      throw new Error('mergeRows requires at least one merge key column. Deselect at least one column.');
+    }
+
+    const normalizedSources = sourceRows.map((row) => this._normalizeRow(row));
+    if (normalizedSources.length === 0 && this.rows.length === 0) {
+      return null;
+    }
+
+    const existingKeyIndex = new Map();
+    this.rows.forEach((row, index) => {
+      const key = serializeMergeKey(row, keyColumns);
+      if (!existingKeyIndex.has(key)) {
+        existingKeyIndex.set(key, []);
+      }
+      existingKeyIndex.get(key).push(index);
+    });
+
+    const usedRowIndices = new Set();
+    const nextRows = [];
+    const mergeSummary = {
+      added: [],
+      removed: [],
+      updated: [],
+      updateColumns: Array.from(updateColumnSet),
+      keyColumns: keyColumns.slice(),
+    };
+
+    normalizedSources.forEach((sourceRow, position) => {
+      const key = serializeMergeKey(sourceRow, keyColumns);
+      const candidateIndices = existingKeyIndex.get(key) ?? [];
+      const availableIndex = candidateIndices.find((idx) => !usedRowIndices.has(idx));
+
+      if (typeof availableIndex === 'number') {
+        usedRowIndices.add(availableIndex);
+        const existingRow = deepClone(this.rows[availableIndex]);
+        let changed = false;
+
+        updateColumnSet.forEach((columnKey) => {
+          const nextValue = sourceRow[columnKey];
+          if (!valuesEqual(existingRow[columnKey], nextValue)) {
+            existingRow[columnKey] = nextValue;
+            changed = true;
+          }
+        });
+
+        nextRows.push(existingRow);
+        if (changed) {
+          mergeSummary.updated.push({ key, rowIndex: position });
+        }
+      } else {
+        const newRow = this._createEmptyRow();
+        this.columns.forEach((column) => {
+          const value = sourceRow[column.key];
+          if (typeof value !== 'undefined') {
+            newRow[column.key] = value;
+          }
+        });
+        nextRows.push(newRow);
+        mergeSummary.added.push({ key, rowIndex: position });
+      }
+    });
+
+    this.rows.forEach((row, index) => {
+      if (!usedRowIndices.has(index)) {
+        const key = serializeMergeKey(row, keyColumns);
+        mergeSummary.removed.push({ key, rowIndex: index });
+      }
+    });
+
+    if (this._rowsAreIdentical(this.rows, nextRows)) {
+      return null;
+    }
+
+    return this._replaceRowsWithSnapshot(nextRows, {
+      type: 'merge',
+      source,
+      meta: { merge: mergeSummary },
+    });
   }
 
   _ensureRow(rowIndex) {
@@ -906,5 +1043,80 @@ export class TableModel {
       .map((field) => row[field])
       .map((value) => (value === null || typeof value === 'undefined' ? '' : String(value)))
       .join('||');
+  }
+
+  _rowsAreIdentical(currentRows, nextRows) {
+    if (currentRows.length !== nextRows.length) {
+      return false;
+    }
+
+    for (let index = 0; index < currentRows.length; index += 1) {
+      const current = currentRows[index];
+      const next = nextRows[index];
+      for (let columnIndex = 0; columnIndex < this.columns.length; columnIndex += 1) {
+        const columnKey = this.columns[columnIndex].key;
+        if (!valuesEqual(current[columnKey], next[columnKey])) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  _replaceRowsWithSnapshot(nextRows, { type, source, meta } = {}) {
+    const previousRows = deepClone(this.rows);
+    this.rows = nextRows.map((row) => deepClone(row));
+    this._cleanTrailingEmptyRows();
+    this._refreshValidations();
+    this._rebuildView();
+
+    const summary = {
+      type,
+      source,
+      changes: [],
+      affectedRowIndices: this.rows.map((_, index) => index),
+      rows: this.getRowsWithIndices(),
+      errors: this.getErrorsGrouped(),
+      meta,
+    };
+
+    this.undoStack.push({
+      type,
+      source,
+      snapshot: {
+        before: previousRows,
+        after: deepClone(this.rows),
+      },
+      meta,
+    });
+
+    if (this.undoStack.length > this.options.undoLimit) {
+      this.undoStack.shift();
+    }
+
+    this.redoStack = [];
+    this._emitChange(summary);
+    return summary;
+  }
+
+  _applySnapshotRows(snapshotRows, { type, source, meta } = {}) {
+    this.rows = deepClone(snapshotRows);
+    this._cleanTrailingEmptyRows();
+    this._refreshValidations();
+    this._rebuildView();
+
+    const summary = {
+      type,
+      source,
+      changes: [],
+      affectedRowIndices: this.rows.map((_, index) => index),
+      rows: this.getRowsWithIndices(),
+      errors: this.getErrorsGrouped(),
+      meta,
+    };
+
+    this._emitChange(summary);
+    return summary;
   }
 }

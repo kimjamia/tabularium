@@ -54,3 +54,68 @@ describe('TableModel sorting', () => {
     expect(getColumnValues(model, 'label')).toEqual(initialLabels);
   });
 });
+
+describe('TableModel merging', () => {
+  const mergeColumns = [
+    { key: 'name', label: 'Name', unique: true },
+    { key: 'status', label: 'Status' },
+    { key: 'score', label: 'Score', type: 'number' },
+  ];
+
+  it('merges rows using selected columns and replaces missing entries', () => {
+    const rows = [
+      { name: 'Ava', status: 'draft', score: 10 },
+      { name: 'Ben', status: 'approved', score: 20 },
+    ];
+
+    const model = new TableModel({ columns: mergeColumns, data: rows, options: { allowAddEmptyRow: false } });
+
+    const summary = model.mergeRows([
+      { name: 'Ben', status: 'updated', score: 25 },
+      { name: 'Cara', status: 'new', score: 30 },
+    ], {
+      updateColumns: ['status', 'score'],
+    });
+
+    expect(model.getRawData()).toEqual([
+      { name: 'Ben', status: 'updated', score: 25 },
+      { name: 'Cara', status: 'new', score: 30 },
+    ]);
+
+    expect(summary?.type).toBe('merge');
+    expect(summary?.meta?.merge.added).toHaveLength(1);
+    expect(summary?.meta?.merge.removed).toHaveLength(1);
+    expect(summary?.meta?.merge.updated).toHaveLength(1);
+  });
+
+  it('requires at least one merge key column', () => {
+    const model = new TableModel({ columns: mergeColumns, data: [], options: { allowAddEmptyRow: false } });
+    expect(() => model.mergeRows([], { updateColumns: ['name', 'status', 'score'] }))
+      .toThrow(/merge key column/i);
+  });
+
+  it('supports undo and redo for merge operations', () => {
+    const rows = [
+      { name: 'Ava', status: 'draft', score: 10 },
+      { name: 'Ben', status: 'approved', score: 20 },
+    ];
+
+    const model = new TableModel({ columns: mergeColumns, data: rows, options: { allowAddEmptyRow: false } });
+
+    model.mergeRows([
+      { name: 'Ben', status: 'updated', score: 25 },
+    ], { updateColumns: ['status', 'score'] });
+
+    expect(model.getRawData()).toEqual([
+      { name: 'Ben', status: 'updated', score: 25 },
+    ]);
+
+    model.undo();
+    expect(model.getRawData()).toEqual(rows);
+
+    model.redo();
+    expect(model.getRawData()).toEqual([
+      { name: 'Ben', status: 'updated', score: 25 },
+    ]);
+  });
+});
