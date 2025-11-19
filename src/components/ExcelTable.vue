@@ -78,15 +78,15 @@
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="(entry, viewRowIndex) in viewRows"
-            :key="entry.key ?? entry.index"
-            :data-row-index="entry.index"
-            :data-row-position="viewRowIndex"
-            :class="{
-              'is-placeholder': entry.isPlaceholder,
-            }"
-          >
+            <tr
+              v-for="(entry, viewRowIndex) in viewRows"
+              :key="entry.key ?? entry.index"
+              :data-row-index="entry.index"
+              :data-row-position="viewRowIndex"
+              :class="{
+                'is-placeholder': entry.isPlaceholder,
+              }"
+            >
             <td
               v-for="(column, columnIndex) in internalColumns"
               :key="column.key"
@@ -129,15 +129,16 @@
                     </select>
                   </template>
 
-                  <template v-else-if="column.type === 'number'">
-                    <input
-                      class="excel-table__input"
-                      type="number"
-                      :value="entry.data[column.key] ?? ''"
-                      @input="(event) => onInputChange(entry, column, event.target.value)"
-                      @keydown="(event) => onCellInputKeyDown(event, entry.index, columnIndex, viewRowIndex)"
-                    >
-                  </template>
+                <template v-else-if="column.type === 'number'">
+                  <input
+                    class="excel-table__input"
+                    type="number"
+                    :value="getCellInputValue(entry, column)"
+                    @input="(event) => onCellInput(entry, column, event.target.value)"
+                    @blur="() => commitCellEdit(entry, column)"
+                    @keydown="(event) => onCellInputKeyDown(event, entry, column, columnIndex, viewRowIndex)"
+                  >
+                </template>
 
                   <template v-else-if="column.type === 'button'">
                     <button
@@ -168,9 +169,10 @@
                   <input
                     class="excel-table__input"
                     type="text"
-                    :value="entry.data[column.key] ?? ''"
-                    @input="(event) => onInputChange(entry, column, event.target.value)"
-                      @keydown="(event) => onCellInputKeyDown(event, entry.index, columnIndex, viewRowIndex)"
+                    :value="getCellInputValue(entry, column)"
+                    @input="(event) => onCellInput(entry, column, event.target.value)"
+                    @blur="() => commitCellEdit(entry, column)"
+                    @keydown="(event) => onCellInputKeyDown(event, entry, column, columnIndex, viewRowIndex)"
                   >
                 </template>
 
@@ -254,6 +256,7 @@ const emit = defineEmits([
 
 const containerRef = ref(null);
 const columnFilters = reactive({ ...props.filters });
+const editingValues = reactive({});
 
 const model = ref(new TableModel({
   columns: props.columns,
@@ -308,6 +311,8 @@ function resetModel(newColumns, newOptions) {
     unsubscribe();
   }
 
+  clearEditingState();
+
   model.value = new TableModel({
     columns: newColumns ?? props.columns,
     data: props.modelValue ?? [],
@@ -346,6 +351,7 @@ watch(
       viewRows.value = model.value.getViewRows();
       errors.value = model.value.getErrorsGrouped();
       sortState.value = model.value.getSortState();
+      clearEditingState();
     }
   },
   { deep: true }
@@ -525,13 +531,9 @@ function getNumberFilterValue(columnKey, bound) {
   return entry && typeof entry === 'object' ? entry[bound] ?? '' : '';
 }
 
-function onInputChange(entry, column, rawValue) {
-  model.value.setCell(entry.index, column.key, rawValue, { source: CHANGE_SOURCES.EDIT });
-  emit('cell-edit', {
-    rowIndex: entry.index,
-    column,
-    value: rawValue,
-  });
+function onCellInput(entry, column, rawValue) {
+  const key = getEditingKey(entry.index, column.key);
+  editingValues[key] = rawValue;
 }
 
 function onCheckboxChange(entry, column, checked) {
@@ -756,7 +758,7 @@ function getCellElement(rowIndex, columnIndex) {
   return row.querySelectorAll('td')[columnIndex] ?? null;
 }
 
-function onCellInputKeyDown(event, rowIndex, columnIndex, viewRowIndex) {
+function onCellInputKeyDown(event, entry, column, columnIndex, viewRowIndex) {
   if (!event || typeof viewRowIndex !== 'number') {
     return;
   }
@@ -765,10 +767,18 @@ function onCellInputKeyDown(event, rowIndex, columnIndex, viewRowIndex) {
   const isForwardTab = key === 'Tab' && !shiftKey;
   const isBackwardTab = key === 'Tab' && shiftKey;
 
+  if (key === 'Escape') {
+    event.preventDefault();
+    cancelCellEdit(entry, column);
+    return;
+  }
+
   let rowDelta = 0;
   let columnDelta = 0;
 
-  if (key === 'Enter' || key === 'ArrowDown') {
+  if (key === 'Enter') {
+    rowDelta = shiftKey ? -1 : 1;
+  } else if (key === 'ArrowDown') {
     rowDelta = 1;
   } else if (key === 'ArrowUp') {
     rowDelta = -1;
@@ -782,6 +792,8 @@ function onCellInputKeyDown(event, rowIndex, columnIndex, viewRowIndex) {
 
   event.preventDefault();
   event.stopPropagation();
+
+  commitCellEdit(entry, column);
 
   moveFocusByDelta({
     fromViewRowIndex: viewRowIndex,
@@ -907,5 +919,48 @@ function onKeyDown(event) {
 
 function onViewportScroll() {
   scrollTick.value += 1;
+}
+
+function getEditingKey(rowIndex, columnKey) {
+  return `${rowIndex}:${columnKey}`;
+}
+
+function getCellInputValue(entry, column) {
+  const key = getEditingKey(entry.index, column.key);
+  if (Object.prototype.hasOwnProperty.call(editingValues, key)) {
+    return editingValues[key];
+  }
+  const value = entry.data[column.key];
+  return value ?? '';
+}
+
+function commitCellEdit(entry, column) {
+  const key = getEditingKey(entry.index, column.key);
+  if (!Object.prototype.hasOwnProperty.call(editingValues, key)) {
+    return;
+  }
+
+  const pendingValue = editingValues[key];
+  delete editingValues[key];
+
+  model.value.setCell(entry.index, column.key, pendingValue, { source: CHANGE_SOURCES.EDIT });
+  emit('cell-edit', {
+    rowIndex: entry.index,
+    column,
+    value: pendingValue,
+  });
+}
+
+function cancelCellEdit(entry, column) {
+  const key = getEditingKey(entry.index, column.key);
+  if (Object.prototype.hasOwnProperty.call(editingValues, key)) {
+    delete editingValues[key];
+  }
+}
+
+function clearEditingState() {
+  Object.keys(editingValues).forEach((key) => {
+    delete editingValues[key];
+  });
 }
 </script>
