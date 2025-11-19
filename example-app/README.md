@@ -1,6 +1,9 @@
 # example-app
 
-This template should help get you started developing with Vue 3 in Vite.
+This template now showcases the `vue3-excel-table` component with two routes:
+
+- `/` &mdash; A basic table backed by static in-memory data.
+- `/rest-api` &mdash; A simulated REST-backed table that talks to a fake API (`src/services/fakeEmployeeApi.ts`). Every create, update, or delete request waits 500–900&nbsp;ms so you can observe asynchronous sync states.
 
 ## Recommended IDE Setup
 

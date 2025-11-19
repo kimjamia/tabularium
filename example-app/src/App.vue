@@ -1,112 +1,94 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import ExcelTable from 'vue3-excel-table'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 
-// Define columns for the table
-const columns = [
-  {
-    key: 'name',
-    label: 'Name',
-    width: 200,
-    unique: true,
-  },
-  {
-    key: 'age',
-    label: 'Age',
-    type: 'number',
-    width: 100,
-  },
-  {
-    key: 'email',
-    label: 'Email',
-    width: 250,
-  },
-  {
-    key: 'department',
-    label: 'Department',
-    width: 150,
-  },
-  {
-    key: 'salary',
-    label: 'Salary',
-    type: 'number',
-    width: 120,
-  },
+type NavLink = {
+  to: string
+  label: string
+  name: string
+}
+
+const route = useRoute()
+
+const links: NavLink[] = [
+  { to: '/', label: 'Static data', name: 'basic' },
+  { to: '/rest-api', label: 'REST API simulation', name: 'rest-api' },
 ]
-
-// Example data rows
-const tableData = ref([
-  {
-    name: 'John Doe',
-    age: 32,
-    email: 'john.doe@example.com',
-    department: 'Engineering',
-    salary: 85000,
-  },
-  {
-    name: 'Jane Smith',
-    age: 28,
-    email: 'jane.smith@example.com',
-    department: 'Marketing',
-    salary: 72000,
-  },
-  {
-    name: 'Bob Johnson',
-    age: 45,
-    email: 'bob.johnson@example.com',
-    department: 'Sales',
-    salary: 68000,
-  },
-  {
-    name: 'Alice Williams',
-    age: 35,
-    email: 'alice.williams@example.com',
-    department: 'Engineering',
-    salary: 92000,
-  },
-  {
-    name: 'Charlie Brown',
-    age: 29,
-    email: 'charlie.brown@example.com',
-    department: 'HR',
-    salary: 65000,
-  },
-])
 </script>
 
 <template>
-  <div class="app-container">
-    <h1>Excel Table Example</h1>
-    <p>This is a simple demonstration of the Excel Table component with example data.</p>
-    <div class="table-wrapper">
-      <ExcelTable
-        :columns="columns"
-        v-model="tableData"
-      />
-    </div>
+  <div class="app-shell">
+    <header class="app-header">
+      <div>
+        <h1>Vue3 Excel Table Examples</h1>
+        <p>Switch between a static data set and a fake REST-backed table.</p>
+      </div>
+      <nav class="app-nav">
+        <RouterLink
+          v-for="link in links"
+          :key="link.to"
+          :to="link.to"
+          class="app-nav__link"
+          :class="{ 'is-active': route.name === link.name }"
+        >
+          {{ link.label }}
+        </RouterLink>
+      </nav>
+    </header>
+
+    <main class="app-content">
+      <RouterView />
+    </main>
   </div>
 </template>
 
 <style scoped>
-.app-container {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+.app-shell {
+  min-height: 100vh;
+  background: #f5f7fb;
+  color: #111827;
 }
 
-h1 {
-  margin-bottom: 10px;
-  color: #333;
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-p {
-  margin-bottom: 20px;
-  color: #666;
+.app-header h1 {
+  margin: 0 0 8px;
 }
 
-.table-wrapper {
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  overflow: hidden;
+.app-header p {
+  margin: 0;
+  color: #4b5563;
+}
+
+.app-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.app-nav__link {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #1f2937;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.app-nav__link.is-active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.app-content {
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
+  min-height: calc(100vh - 140px);
 }
 </style>
