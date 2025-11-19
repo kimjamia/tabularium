@@ -6,6 +6,15 @@ import { EMPLOYEE_STATUSES, FakeEmployeeApi, type EmployeeRow } from '../service
 
 type TableRow = EmployeeRow & { __tempKey?: string }
 
+type TableChangeSummary = {
+  source?: string
+  type?: string
+  changes?: Array<{
+    rowIndex: number
+    columnKey: string
+  }>
+}
+
 const DATA_KEYS: Array<keyof EmployeeRow> = ['name', 'role', 'status', 'salary', 'location']
 let tempRowCounter = 0
 
@@ -168,11 +177,20 @@ function removeCreatingTempKey(tempKey: string) {
   creatingTempKeys.value = next
 }
 
+function getColumnLabel(columnKey: string) {
+  const column = columns.find((entry) => entry.key === columnKey)
+  return column?.label ?? columnKey
+}
+
 function findRowByTempKey(tempKey?: string) {
   if (!tempKey) {
     return undefined
   }
   return tableRows.value.find((row) => row.__tempKey === tempKey)
+}
+
+function findRowByIndex(rowIndex: number) {
+  return tableRows.value[rowIndex]
 }
 
 function buildRowPayload(row: TableRow): Partial<EmployeeRow> {
@@ -268,37 +286,59 @@ function isDataColumn(columnKey: string): columnKey is keyof EmployeeRow {
   return columnKey !== 'actions' && columnKey !== 'id'
 }
 
-async function handleCellEdit({
-  rowIndex,
-  column,
-}: {
-  rowIndex: number
-  column: { key: string; label?: string }
-}) {
-  const row = tableRows.value[rowIndex] as TableRow | undefined
-  if (!row || !isDataColumn(column.key)) {
-    return
-  }
+function isCommitSummary(summary?: TableChangeSummary): summary is TableChangeSummary & { changes: NonNullable<TableChangeSummary['changes']> } {
+  return Boolean(
+    summary
+      && summary.source === 'edit'
+      && summary.type === 'cell'
+      && Array.isArray(summary.changes)
+      && summary.changes.length > 0,
+  )
+}
 
-  clearError()
-
+async function persistCommittedChange(row: TableRow, columnKey: keyof EmployeeRow) {
   if (!row.id) {
-    const tempKey = ensureTempKey(row)
-    startCreatingRow(tempKey, rowIndex)
     return
   }
 
   setRowPending(row.id, true)
 
   try {
-    const updated = await api.updateCell(row.id, column.key, row[column.key])
+    const updated = await api.updateCell(row.id, columnKey, row[columnKey])
     replaceRow(updated)
-    statusMessage.value = `Saved ${column.label ?? column.key} for ${updated.name}`
+    statusMessage.value = `Saved ${getColumnLabel(columnKey)} for ${updated.name}`
   } catch (error) {
     handleError(error)
     await fetchRows()
   } finally {
     setRowPending(row.id, false)
+  }
+}
+
+async function handleTableChange(summary: TableChangeSummary) {
+  if (!isCommitSummary(summary)) {
+    return
+  }
+
+  clearError()
+
+  for (const change of summary.changes) {
+    if (!isDataColumn(change.columnKey)) {
+      continue
+    }
+
+    const row = findRowByIndex(change.rowIndex)
+    if (!row) {
+      continue
+    }
+
+    if (!row.id) {
+      const tempKey = ensureTempKey(row)
+      startCreatingRow(tempKey, change.rowIndex)
+      continue
+    }
+
+    await persistCommittedChange(row, change.columnKey)
   }
 }
 
@@ -342,7 +382,7 @@ async function handleDeleteRow(row?: TableRow, rowIndex?: number) {
     </header>
 
     <p class="api-view__instructions">
-      Use the empty row at the bottom of the table to add a new employee. We queue your edits until the fake API issues an ID.
+      Use the empty row at the bottom of the table to add a new employee. We queue your edits until the fake API issues an ID, and we only sync when you commit the cell (Enter or blur).
     </p>
 
     <p
@@ -381,11 +421,11 @@ async function handleDeleteRow(row?: TableRow, rowIndex?: number) {
         :columns="columns"
         :options="tableOptions"
         v-model="tableRows"
-        @cell-edit="handleCellEdit"
+        @change="handleTableChange"
       />
 
         <p class="api-view__hint">
-          Tip: edits made while a row is being created will sync automatically once the new ID arrives.
+          Tip: commits (press Enter, Tab, or click away) trigger the API call; interim typing stays local and batches automatically.
         </p>
     </div>
   </div>
