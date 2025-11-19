@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import ExcelTable from 'vue3-excel-table'
 
 import { EMPLOYEE_STATUSES, FakeEmployeeApi, type EmployeeRow } from '../services/fakeEmployeeApi'
@@ -321,6 +321,7 @@ async function handleTableChange(summary: TableChangeSummary) {
   }
 
   clearError()
+  await nextTick()
 
   for (const change of summary.changes) {
     if (!isDataColumn(change.columnKey)) {
