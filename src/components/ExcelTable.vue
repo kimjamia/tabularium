@@ -5,7 +5,11 @@
     tabindex="0"
     @keydown="onKeyDown"
   >
-    <div ref="viewportRef" class="excel-table__viewport" @scroll="onViewportScroll">
+    <div
+      ref="viewportRef"
+      class="excel-table__viewport"
+      @scroll="onViewportScroll"
+    >
       <table class="excel-table__grid">
         <thead>
           <tr>
@@ -19,7 +23,10 @@
               <div class="excel-table__header-content">
                 <span>{{ column.label ?? column.title ?? column.key }}</span>
               </div>
-              <div v-if="column.filterable" class="excel-table__filter">
+              <div
+                v-if="column.filterable"
+                class="excel-table__filter"
+              >
                 <template v-if="column.type === 'number'">
                   <input
                     class="excel-table__filter-input"
@@ -27,14 +34,14 @@
                     :placeholder="column.filterPlaceholderMin ?? 'Min'"
                     :value="getNumberFilterValue(column.key, 'min')"
                     @input="(event) => onNumberFilterChange(column.key, 'min', event.target.value)"
-                  />
+                  >
                   <input
                     class="excel-table__filter-input"
                     type="number"
                     :placeholder="column.filterPlaceholderMax ?? 'Max'"
                     :value="getNumberFilterValue(column.key, 'max')"
                     @input="(event) => onNumberFilterChange(column.key, 'max', event.target.value)"
-                  />
+                  >
                 </template>
                 <template v-else>
                   <input
@@ -43,7 +50,7 @@
                     :placeholder="column.filterPlaceholder ?? 'Filter'"
                     :value="columnFilters[column.key] ?? ''"
                     @input="(event) => onTextFilterChange(column.key, event.target.value)"
-                  />
+                  >
                 </template>
               </div>
             </th>
@@ -67,7 +74,7 @@
               :style="getCellStyle(columnIndex)"
               @mousedown="(event) => onCellMouseDown(event, entry, column, viewRowIndex, columnIndex)"
               @mouseenter="(event) => onCellMouseEnter(event, entry, column, viewRowIndex, columnIndex)"
-              @paste.prevent="(event) => onCellPaste(event, entry, column, columnIndex)"
+              @paste.prevent="(event) => onCellPaste(event, entry, column)"
             >
               <div class="excel-table__cell-content">
                 <template v-if="column.type === 'checkbox'">
@@ -75,7 +82,7 @@
                     type="checkbox"
                     :checked="Boolean(entry.data[column.key])"
                     @change="(event) => onCheckboxChange(entry, column, event.target.checked)"
-                  />
+                  >
                 </template>
 
                 <template v-else-if="column.type === 'dropdown'">
@@ -84,7 +91,12 @@
                     :value="entry.data[column.key] ?? ''"
                     @change="(event) => onDropdownChange(entry, column, event.target.value)"
                   >
-                    <option value="" v-if="column.dropdown?.allowEmpty">{{ column.dropdown.emptyLabel ?? 'Select…' }}</option>
+                    <option
+                      v-if="column.dropdown?.allowEmpty"
+                      value=""
+                    >
+                      {{ column.dropdown.emptyLabel ?? 'Select…' }}
+                    </option>
                     <option
                       v-for="option in getDropdownOptions(column)"
                       :key="getDropdownOptionKey(column, option)"
@@ -101,7 +113,7 @@
                     type="number"
                     :value="entry.data[column.key] ?? ''"
                     @input="(event) => onInputChange(entry, column, event.target.value)"
-                  />
+                  >
                 </template>
 
                 <template v-else-if="column.type === 'button'">
@@ -135,17 +147,20 @@
                     type="text"
                     :value="entry.data[column.key] ?? ''"
                     @input="(event) => onInputChange(entry, column, event.target.value)"
-                  />
+                  >
                 </template>
 
                 <span
                   v-if="selection && isBottomRightCell(entry.index, columnIndex)"
                   class="excel-table__fill-handle"
-                  @mousedown.stop="(event) => startFillDrag(event)"
-                ></span>
+                  @mousedown.stop="startFillDrag"
+                />
               </div>
 
-              <div v-if="getCellErrors(entry.index, column.key).length" class="excel-table__cell-errors">
+              <div
+                v-if="getCellErrors(entry.index, column.key).length"
+                class="excel-table__cell-errors"
+              >
                 <span
                   v-for="(error, errorIndex) in getCellErrors(entry.index, column.key)"
                   :key="`${column.key}-error-${errorIndex}`"
@@ -161,12 +176,12 @@
         v-if="fillPreview"
         class="excel-table__fill-preview"
         :style="getSelectionBoxStyle(fillPreview)"
-      ></div>
+      />
       <div
         v-if="selection"
         class="excel-table__selection"
         :style="getSelectionBoxStyle(selection)"
-      ></div>
+      />
     </div>
   </div>
 </template>
@@ -179,7 +194,6 @@ import {
   watch,
   onMounted,
   onBeforeUnmount,
-  nextTick,
 } from 'vue';
 import { TableModel } from '../core/TableModel.js';
 import { CHANGE_SOURCES } from '../core/constants.js';
@@ -592,7 +606,7 @@ function isBottomRightCell(rowIndex, columnIndex) {
   return selection.value.endRow === rowIndex && selection.value.endCol === columnIndex;
 }
 
-function startFillDrag(event) {
+function startFillDrag() {
   if (!selection.value) {
     return;
   }
@@ -677,7 +691,7 @@ function getCellElement(rowIndex, columnIndex) {
   return row.querySelectorAll('td')[columnIndex] ?? null;
 }
 
-function onCellPaste(event, entry, column, columnIndex) {
+function onCellPaste(event, entry, column) {
   const text = event.clipboardData.getData('text/plain');
   if (!text) {
     return;
