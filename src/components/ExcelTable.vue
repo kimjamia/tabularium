@@ -10,23 +10,44 @@
       class="excel-table__viewport"
       @scroll="onViewportScroll"
     >
-      <table class="excel-table__grid">
-        <thead>
-          <tr>
-            <th
-              v-for="(column, columnIndex) in internalColumns"
-              :key="column.key"
-              class="excel-table__header-cell"
-              :class="{ 'is-frozen': isColumnFrozen(columnIndex) }"
-              :style="getColumnStyle(columnIndex)"
-            >
-              <div class="excel-table__header-content">
-                <span>{{ column.label ?? column.title ?? column.key }}</span>
-              </div>
-              <div
-                v-if="column.filterable"
-                class="excel-table__filter"
+        <table class="excel-table__grid">
+          <thead>
+            <tr>
+              <th
+                v-for="(column, columnIndex) in internalColumns"
+                :key="column.key"
+                class="excel-table__header-cell"
+                :class="{ 'is-frozen': isColumnFrozen(columnIndex) }"
+                :style="getColumnStyle(columnIndex)"
+                :aria-sort="getColumnAriaSort(column.key)"
               >
+                <div
+                  class="excel-table__header-content"
+                  :class="{
+                    'is-sortable': column.sortable !== false,
+                    'is-sorted': Boolean(getColumnSortDirection(column.key)),
+                  }"
+                  :tabindex="column.sortable === false ? undefined : 0"
+                  :role="column.sortable === false ? undefined : 'button'"
+                  @click="() => onHeaderClick(column)"
+                  @keydown.enter.prevent="(event) => onHeaderKeyDown(event, column)"
+                  @keydown.space.prevent="(event) => onHeaderKeyDown(event, column)"
+                >
+                  <span>{{ column.label ?? column.title ?? column.key }}</span>
+                  <span
+                    v-if="getColumnSortDirection(column.key)"
+                    class="excel-table__sort-indicator"
+                    :class="{
+                      'is-asc': getColumnSortDirection(column.key) === 'asc',
+                      'is-desc': getColumnSortDirection(column.key) === 'desc',
+                    }"
+                    aria-hidden="true"
+                  />
+                </div>
+                <div
+                  v-if="column.filterable"
+                  class="excel-table__filter"
+                >
                 <template v-if="column.type === 'number'">
                   <input
                     class="excel-table__filter-input"
@@ -238,6 +259,7 @@ const model = ref(new TableModel({
 
 const viewRows = ref(model.value.getViewRows());
 const errors = ref(model.value.getErrorsGrouped());
+const sortState = ref(model.value.getSortState());
 
 const selection = ref(null);
 const anchorCell = ref(null);
@@ -270,8 +292,9 @@ const columnOffsets = computed(() => {
 let unsubscribe = model.value.registerChangeListener((summary) => {
   errors.value = summary.errors;
   viewRows.value = model.value.getViewRows();
+  sortState.value = model.value.getSortState();
   emit('change', summary);
-  if (summary.type !== 'filter') {
+  if (summary.type !== 'filter' && summary.type !== 'sort') {
     emit('update:modelValue', model.value.getRawData());
   }
 });
@@ -289,11 +312,13 @@ function resetModel(newColumns, newOptions) {
 
   viewRows.value = model.value.getViewRows();
   errors.value = model.value.getErrorsGrouped();
+  sortState.value = model.value.getSortState();
   unsubscribe = model.value.registerChangeListener((summary) => {
     errors.value = summary.errors;
     viewRows.value = model.value.getViewRows();
+    sortState.value = model.value.getSortState();
     emit('change', summary);
-    if (summary.type !== 'filter') {
+    if (summary.type !== 'filter' && summary.type !== 'sort') {
       emit('update:modelValue', model.value.getRawData());
     }
   });
@@ -316,6 +341,7 @@ watch(
       model.value.setData(next ?? [], { silent: true });
       viewRows.value = model.value.getViewRows();
       errors.value = model.value.getErrorsGrouped();
+      sortState.value = model.value.getSortState();
     }
   },
   { deep: true }
@@ -379,6 +405,7 @@ function applyFiltersFromProps() {
     }
   });
   viewRows.value = model.value.getViewRows();
+  sortState.value = model.value.getSortState();
 }
 
 function isColumnFrozen(columnIndex) {
@@ -431,6 +458,40 @@ function getCellStyle(columnIndex) {
   }
 
   return styles;
+}
+
+function onHeaderClick(column) {
+  if (!column || column.sortable === false) {
+    return;
+  }
+
+  const nextState = model.value.cycleSort(column.key);
+  sortState.value = nextState ? { ...nextState } : null;
+}
+
+function onHeaderKeyDown(event, column) {
+  if (event?.key === 'Enter' || event?.key === ' ') {
+    event.preventDefault();
+    onHeaderClick(column);
+  }
+}
+
+function getColumnSortDirection(columnKey) {
+  if (!sortState.value || sortState.value.columnKey !== columnKey) {
+    return null;
+  }
+  return sortState.value.direction;
+}
+
+function getColumnAriaSort(columnKey) {
+  const direction = getColumnSortDirection(columnKey);
+  if (direction === 'asc') {
+    return 'ascending';
+  }
+  if (direction === 'desc') {
+    return 'descending';
+  }
+  return 'none';
 }
 
 function onTextFilterChange(columnKey, value) {

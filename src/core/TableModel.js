@@ -91,7 +91,7 @@ function defaultColumnFactory(column, index) {
     type: 'text',
     editable: true,
     filterable: true,
-    sortable: false,
+    sortable: true,
     allowPaste: true,
     ...column,
     key,
@@ -122,6 +122,7 @@ export class TableModel {
     this.undoStack = [];
     this.redoStack = [];
     this.viewCache = [];
+    this.sortState = null;
     this._suspendNotifications = false;
 
     this.setData(data, { silent: true });
@@ -193,6 +194,71 @@ export class TableModel {
 
   getViewRows(options = {}) {
     return this.getRowsWithIndices(options);
+  }
+
+  getSortState() {
+    return this.sortState ? { ...this.sortState } : null;
+  }
+
+  cycleSort(columnKey) {
+    if (!this.columnIndex.has(columnKey)) {
+      return this.getSortState();
+    }
+
+    const isActiveColumn = this.sortState && this.sortState.columnKey === columnKey;
+    const currentDirection = isActiveColumn ? this.sortState.direction : null;
+    let nextDirection = null;
+
+    if (!currentDirection) {
+      nextDirection = 'asc';
+    } else if (currentDirection === 'asc') {
+      nextDirection = 'desc';
+    } else {
+      nextDirection = null;
+    }
+
+    return this.setSort(columnKey, nextDirection);
+  }
+
+  setSort(columnKey, direction) {
+    if (direction && !this.columnIndex.has(columnKey)) {
+      return this.getSortState();
+    }
+
+    const nextState = direction ? { columnKey, direction } : null;
+    const prevState = this.sortState ? { ...this.sortState } : null;
+
+    if (
+      (!prevState && !nextState)
+      || (prevState && nextState
+        && prevState.columnKey === nextState.columnKey
+        && prevState.direction === nextState.direction)
+    ) {
+      return this.getSortState();
+    }
+
+    if (nextState) {
+      const column = this.getColumn(nextState.columnKey);
+      if (column.sortable === false) {
+        return this.getSortState();
+      }
+      this.sortState = nextState;
+    } else {
+      this.sortState = null;
+    }
+
+    this._rebuildView();
+    this._emitChange({
+      type: 'sort',
+      source: CHANGE_SOURCES.PROGRAMMATIC,
+      changes: [],
+      affectedRowIndices: this.viewCache.map(({ index }) => index),
+      rows: this.getRowsWithIndices(),
+      errors: this.getErrorsGrouped(),
+      sortState: this.getSortState(),
+    });
+
+    return this.getSortState();
   }
 
   getRow(rowIndex) {
@@ -596,11 +662,104 @@ export class TableModel {
       }
     });
 
+    const sortColumn = this._getActiveSortColumn();
+    if (sortColumn && this.sortState) {
+      const directionFactor = this.sortState.direction === 'desc' ? -1 : 1;
+      filtered.sort((a, b) => directionFactor * this._compareRowsForSort(sortColumn, a, b));
+    }
+
     this.viewCache = filtered.map(({ row, index }) => ({
       row,
       index,
       key: this._computeRowKey(row, index),
     }));
+  }
+
+  _getActiveSortColumn() {
+    if (!this.sortState) {
+      return null;
+    }
+
+    const columnIndex = this.columnIndex.get(this.sortState.columnKey);
+    if (typeof columnIndex === 'undefined') {
+      this.sortState = null;
+      return null;
+    }
+
+    const column = this.columns[columnIndex];
+    if (!column || column.sortable === false) {
+      this.sortState = null;
+      return null;
+    }
+
+    return column;
+  }
+
+  _compareRowsForSort(column, a, b) {
+    const valueA = this._normalizeSortValue(column, a.row[column.key]);
+    const valueB = this._normalizeSortValue(column, b.row[column.key]);
+
+    if (valueA === null && valueB === null) {
+      return a.index - b.index;
+    }
+    if (valueA === null) {
+      return 1;
+    }
+    if (valueB === null) {
+      return -1;
+    }
+
+    if (typeof valueA === 'number' && typeof valueB === 'number') {
+      if (valueA === valueB) {
+        return a.index - b.index;
+      }
+      return valueA < valueB ? -1 : 1;
+    }
+
+    const comparison = String(valueA).localeCompare(String(valueB), undefined, { sensitivity: 'base' });
+    if (comparison === 0) {
+      return a.index - b.index;
+    }
+    return comparison;
+  }
+
+  _normalizeSortValue(column, value) {
+    if (value === null || typeof value === 'undefined') {
+      return null;
+    }
+
+    if (column.type === 'number') {
+      const normalized = normalizeNumber(value);
+      return typeof normalized === 'number' ? normalized : null;
+    }
+
+    if (column.type === 'checkbox') {
+      return value ? 1 : 0;
+    }
+
+    if (column.type === 'dropdown') {
+      const display = getDropdownDisplay(column, value);
+      return typeof display === 'string'
+        ? display.toLowerCase()
+        : String(display ?? '').toLowerCase();
+    }
+
+    if (column.type === 'links') {
+      return (value ?? [])
+        .map((entry) => entry?.label ?? entry?.href ?? '')
+        .join('||')
+        .toLowerCase();
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    return String(value).toLowerCase();
   }
 
   _passesFilters(row, rowIndex) {

@@ -50,6 +50,40 @@
   box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
 }
 
+.excel-table__header-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  user-select: none;
+}
+
+.excel-table__header-content.is-sortable {
+  cursor: pointer;
+}
+
+.excel-table__header-content.is-sortable:focus {
+  outline: 2px solid var(--excel-table-selection-border);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.excel-table__sort-indicator {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.excel-table__sort-indicator.is-asc {
+  border-bottom: 6px solid currentColor;
+}
+
+.excel-table__sort-indicator.is-desc {
+  border-top: 6px solid currentColor;
+}
+
 .excel-table__filter {
   display: flex;
   gap: 4px;
