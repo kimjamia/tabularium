@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ExcelTable from 'vue3-excel-table'
 
 const departmentOptions = [
@@ -56,6 +56,21 @@ const columns = [
     width: 120,
   },
 ]
+
+const allColumnKeys = columns.map((column) => column.key)
+
+const visibleColumnKeys = ref<string[]>([...allColumnKeys])
+const visibleColumns = computed(() => columns.filter((column) => visibleColumnKeys.value.includes(column.key)))
+
+watch(visibleColumnKeys, (next) => {
+  if (!next.length) {
+    visibleColumnKeys.value = [...allColumnKeys]
+  }
+})
+
+function resetVisibleColumns() {
+  visibleColumnKeys.value = [...allColumnKeys]
+}
 
 // Example data rows
 const tableData = ref([
@@ -143,9 +158,42 @@ function handleCellEdit(payload: CellEditPayload) {
   <div class="app-container">
     <h1>Excel Table Example</h1>
     <p>This is a simple demonstration of the Excel Table component with example data.</p>
+      <div class="controls">
+        <div class="column-visibility">
+          <label
+            class="column-visibility__label"
+            for="visible-columns"
+          >
+            Visible columns
+          </label>
+          <select
+            id="visible-columns"
+            v-model="visibleColumnKeys"
+            class="column-visibility__select"
+            multiple
+            size="5"
+          >
+            <option
+              v-for="column in columns"
+              :key="column.key"
+              :value="column.key"
+            >
+              {{ column.label ?? column.key }}
+            </option>
+          </select>
+          <small>Use Ctrl/Cmd + click (or Shift + click) to toggle multiple columns.</small>
+        </div>
+        <button
+          type="button"
+          class="column-visibility__reset"
+          @click="resetVisibleColumns"
+        >
+          Reset selection
+        </button>
+      </div>
     <div class="table-wrapper">
       <ExcelTable
-        :columns="columns"
+          :columns="visibleColumns"
         v-model="tableData"
         @cell-edit="handleCellEdit"
       />
@@ -192,6 +240,47 @@ p {
   border: 1px solid #ddd;
   border-radius: 4px;
   overflow: hidden;
+}
+
+.controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.column-visibility {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.column-visibility__select {
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.column-visibility small {
+  color: #666;
+  font-size: 12px;
+}
+
+.column-visibility__reset {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.column-visibility__reset:hover {
+  background: #f3f3f3;
 }
 
 .selection-summary {
