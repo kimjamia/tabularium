@@ -145,8 +145,6 @@
 
 .excel-table__input:focus {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--excel-table-selection-border);
-  border-radius: 3px;
 }
 
 .excel-table__button {
@@ -182,6 +180,10 @@
 
 .excel-table__cell.has-error {
   box-shadow: inset 0 0 0 1px var(--excel-table-error-color);
+}
+
+.excel-table__cell:not(.has-error):focus-within {
+  box-shadow: inset 0 0 0 1px var(--excel-table-selection-border);
 }
 
 .excel-table__cell-errors {
