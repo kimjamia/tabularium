@@ -3,7 +3,7 @@
 This template now showcases the `vue3-excel-table` component with two routes:
 
 - `/` &mdash; A basic table backed by static in-memory data.
-- `/rest-api` &mdash; A simulated REST-backed table that talks to a fake API (`src/services/fakeEmployeeApi.ts`). Every create, update, or delete request waits 500–900&nbsp;ms so you can observe asynchronous sync states.
+- `/rest-api` &mdash; A simulated REST-backed table that talks to a fake API (`src/services/fakeEmployeeApi.ts`). Every create, update, or delete request waits 500–900&nbsp;ms so you can observe asynchronous sync states, and new employees are added by editing the empty row at the bottom (edits are queued until the API returns an ID).
 
 ## Recommended IDE Setup
 

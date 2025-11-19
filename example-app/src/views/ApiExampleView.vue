@@ -4,6 +4,11 @@ import ExcelTable from 'vue3-excel-table'
 
 import { EMPLOYEE_STATUSES, FakeEmployeeApi, type EmployeeRow } from '../services/fakeEmployeeApi'
 
+type TableRow = EmployeeRow & { __tempKey?: string }
+
+const DATA_KEYS: Array<keyof EmployeeRow> = ['name', 'role', 'status', 'salary', 'location']
+let tempRowCounter = 0
+
 const api = new FakeEmployeeApi()
 
 const statusOptions = EMPLOYEE_STATUSES.map((status) => ({
@@ -62,28 +67,37 @@ const columns = [
     filterable: false,
     button: {
       label: () => 'Delete row',
-      onClick: ({ row }) => handleDeleteRow(row as EmployeeRow),
+      onClick: ({ row, rowIndex }) => handleDeleteRow(row as TableRow, rowIndex),
     },
   },
 ]
 
 const tableOptions = {
-  allowAddEmptyRow: false,
+  allowAddEmptyRow: true,
   keyFields: ['id'],
 }
 
-const tableRows = ref<EmployeeRow[]>([])
+const tableRows = ref<TableRow[]>([])
 const isLoading = ref(true)
-const isCreatingRow = ref(false)
 const pendingRowIds = ref<Set<number>>(new Set())
+const creatingTempKeys = ref<Set<string>>(new Set())
 const statusMessage = ref('')
 const errorMessage = ref('')
 
-const pendingNames = computed(() =>
-  tableRows.value
-    .filter((row) => pendingRowIds.value.has(row.id))
-    .map((row) => row.name),
-)
+const pendingNames = computed(() => {
+  const names = tableRows.value
+    .filter((row) => row.id && pendingRowIds.value.has(row.id))
+    .map((row) => row.name ?? `Row #${row.id}`)
+
+  creatingTempKeys.value.forEach((tempKey) => {
+    const row = tableRows.value.find((entry) => entry.__tempKey === tempKey)
+    if (row) {
+      names.push(row.name ?? 'New employee')
+    }
+  })
+
+  return names
+})
 
 onMounted(() => {
   fetchRows()
@@ -93,6 +107,7 @@ async function fetchRows() {
   try {
     isLoading.value = true
     tableRows.value = await api.listRows()
+    creatingTempKeys.value = new Set<string>()
   } catch (error) {
     handleError(error)
   } finally {
@@ -134,6 +149,121 @@ function replaceRow(updated: EmployeeRow) {
   tableRows.value.splice(index, 1, updated)
 }
 
+function ensureTempKey(row: TableRow) {
+  if (!row.__tempKey) {
+    row.__tempKey = `temp-${tempRowCounter++}`
+  }
+  return row.__tempKey
+}
+
+function addCreatingTempKey(tempKey: string) {
+  const next = new Set(creatingTempKeys.value)
+  next.add(tempKey)
+  creatingTempKeys.value = next
+}
+
+function removeCreatingTempKey(tempKey: string) {
+  const next = new Set(creatingTempKeys.value)
+  next.delete(tempKey)
+  creatingTempKeys.value = next
+}
+
+function findRowByTempKey(tempKey?: string) {
+  if (!tempKey) {
+    return undefined
+  }
+  return tableRows.value.find((row) => row.__tempKey === tempKey)
+}
+
+function buildRowPayload(row: TableRow): Partial<EmployeeRow> {
+  const payload: Partial<EmployeeRow> = {}
+  DATA_KEYS.forEach((key) => {
+    payload[key] = row[key]
+  })
+  return payload
+}
+
+function applyCreatedRow(tempKey: string, created: EmployeeRow): TableRow | undefined {
+  const localRow = findRowByTempKey(tempKey)
+  if (localRow) {
+    const snapshot: Partial<TableRow> = {}
+    DATA_KEYS.forEach((key) => {
+      snapshot[key] = localRow[key]
+    })
+    Object.assign(localRow, created)
+    DATA_KEYS.forEach((key) => {
+      if (snapshot[key] !== undefined) {
+        localRow[key] = snapshot[key] as TableRow[typeof key]
+      }
+    })
+    delete localRow.__tempKey
+    return localRow
+  }
+
+  tableRows.value.push({ ...created })
+  return tableRows.value[tableRows.value.length - 1]
+}
+
+async function syncChangesAfterCreation(created: EmployeeRow, localRow?: TableRow) {
+  if (!localRow || !created.id) {
+    return
+  }
+  const updates = DATA_KEYS.filter((key) => localRow[key] !== created[key]).map((key) => ({
+    key,
+    value: localRow[key],
+  }))
+
+  if (updates.length === 0) {
+    replaceRow({ ...localRow })
+    return
+  }
+
+  setRowPending(created.id, true)
+  let latest = created
+  try {
+    for (const update of updates) {
+      latest = await api.updateCell(created.id, update.key, update.value)
+    }
+    replaceRow(latest)
+    statusMessage.value = `Saved ${localRow.name ?? `#${created.id}`}`
+  } catch (error) {
+    handleError(error)
+    await fetchRows()
+  } finally {
+    setRowPending(created.id, false)
+  }
+}
+
+function startCreatingRow(tempKey: string, initialRowIndex: number) {
+  if (creatingTempKeys.value.has(tempKey)) {
+    return
+  }
+  addCreatingTempKey(tempKey)
+
+  const row = findRowByTempKey(tempKey) ?? tableRows.value[initialRowIndex]
+  if (!row) {
+    removeCreatingTempKey(tempKey)
+    return
+  }
+
+  const payload = buildRowPayload(row)
+
+  ;(async () => {
+    try {
+      const created = await api.createRow(payload)
+      const localRow = applyCreatedRow(tempKey, created)
+      statusMessage.value = `Created ${created.name} (#${created.id})`
+      await syncChangesAfterCreation(created, localRow)
+      clearError()
+    } catch (error) {
+      handleError(error)
+      await fetchRows()
+    } finally {
+      removeCreatingTempKey(tempKey)
+    }
+  })()
+}
+
 function isDataColumn(columnKey: string): columnKey is keyof EmployeeRow {
   return columnKey !== 'actions' && columnKey !== 'id'
 }
@@ -145,12 +275,19 @@ async function handleCellEdit({
   rowIndex: number
   column: { key: string; label?: string }
 }) {
-  const row = tableRows.value[rowIndex]
+  const row = tableRows.value[rowIndex] as TableRow | undefined
   if (!row || !isDataColumn(column.key)) {
     return
   }
 
   clearError()
+
+  if (!row.id) {
+    const tempKey = ensureTempKey(row)
+    startCreatingRow(tempKey, rowIndex)
+    return
+  }
+
   setRowPending(row.id, true)
 
   try {
@@ -165,23 +302,16 @@ async function handleCellEdit({
   }
 }
 
-async function handleAddRow() {
-  clearError()
-  isCreatingRow.value = true
-
-  try {
-    const created = await api.createRow()
-    tableRows.value = [...tableRows.value, created]
-    statusMessage.value = `Created ${created.name} (#${created.id})`
-  } catch (error) {
-    handleError(error)
-  } finally {
-    isCreatingRow.value = false
+async function handleDeleteRow(row?: TableRow, rowIndex?: number) {
+  if (!row) {
+    return
   }
-}
 
-async function handleDeleteRow(row?: EmployeeRow) {
-  if (!row?.id) {
+  if (!row.id) {
+    const index = typeof rowIndex === 'number' ? rowIndex : tableRows.value.indexOf(row)
+    if (index >= 0) {
+      tableRows.value.splice(index, 1)
+    }
     return
   }
 
@@ -209,18 +339,11 @@ async function handleDeleteRow(row?: EmployeeRow) {
           Every create, update, or delete request hits a fake API that waits 500–900&nbsp;ms before responding.
         </p>
       </div>
-
-      <div class="toolbar">
-        <button
-          class="toolbar__button"
-          type="button"
-          :disabled="isCreatingRow"
-          @click="handleAddRow"
-        >
-          {{ isCreatingRow ? 'Creating…' : 'Add employee' }}
-        </button>
-      </div>
     </header>
+
+    <p class="api-view__instructions">
+      Use the empty row at the bottom of the table to add a new employee. We queue your edits until the fake API issues an ID.
+    </p>
 
     <p
       v-if="pendingNames.length"
@@ -261,9 +384,9 @@ async function handleDeleteRow(row?: EmployeeRow) {
         @cell-edit="handleCellEdit"
       />
 
-      <p class="api-view__hint">
-        Tip: try editing multiple cells or deleting a row to see the async API simulation in action.
-      </p>
+        <p class="api-view__hint">
+          Tip: edits made while a row is being created will sync automatically once the new ID arrives.
+        </p>
     </div>
   </div>
 </template>
@@ -284,19 +407,12 @@ async function handleDeleteRow(row?: EmployeeRow) {
   flex-wrap: wrap;
 }
 
-.toolbar__button {
-  background: #2563eb;
-  border: none;
-  color: #fff;
-  padding: 10px 16px;
+.api-view__instructions {
+  margin: 0;
+  padding: 12px 16px;
   border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.toolbar__button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  background: #eef2ff;
+  color: #312e81;
 }
 
 .api-view__pending {
