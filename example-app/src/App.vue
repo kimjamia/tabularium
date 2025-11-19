@@ -1,6 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ExcelTable from 'vue3-excel-table'
+
+const departmentOptions = [
+  { id: 1, name: 'Engineering' },
+  { id: 2, name: 'Marketing' },
+  { id: 3, name: 'Sales' },
+  { id: 4, name: 'HR' },
+  { id: 5, name: 'Finance' },
+]
+
+const departmentLookup = departmentOptions.reduce<Record<number, { id: number; name: string }>>((acc, option) => {
+  acc[option.id] = option
+  return acc
+}, {})
 
 // Define columns for the table
 const columns = [
@@ -24,7 +37,17 @@ const columns = [
   {
     key: 'department',
     label: 'Department',
-    width: 150,
+    width: 180,
+    type: 'dropdown',
+    dropdown: {
+      options: departmentOptions,
+      valueField: 'id',
+      displayField: 'name',
+      keyFields: ['id'],
+      pasteMode: 'both',
+      allowEmpty: true,
+      emptyLabel: 'Select department',
+    },
   },
   {
     key: 'salary',
@@ -40,38 +63,80 @@ const tableData = ref([
     name: 'John Doe',
     age: 32,
     email: 'john.doe@example.com',
-    department: 'Engineering',
+    department: 1,
     salary: 85000,
   },
   {
     name: 'Jane Smith',
     age: 28,
     email: 'jane.smith@example.com',
-    department: 'Marketing',
+    department: 2,
     salary: 72000,
   },
   {
     name: 'Bob Johnson',
     age: 45,
     email: 'bob.johnson@example.com',
-    department: 'Sales',
+    department: 3,
     salary: 68000,
   },
   {
     name: 'Alice Williams',
     age: 35,
     email: 'alice.williams@example.com',
-    department: 'Engineering',
+    department: 1,
     salary: 92000,
   },
   {
     name: 'Charlie Brown',
     age: 29,
     email: 'charlie.brown@example.com',
-    department: 'HR',
+    department: 4,
     salary: 65000,
   },
 ])
+
+const departmentAssignments = computed(() =>
+  tableData.value.map((row) => {
+    const details = typeof row.department === 'number' ? departmentLookup[row.department] : undefined
+    const departmentId = typeof row.department === 'number' ? row.department : null
+    return {
+      employee: row.name,
+      departmentId,
+      departmentName: details?.name ?? 'Unassigned',
+    }
+  }),
+)
+
+const lastDepartmentSelection = ref<{ id: number; name: string } | null>(null)
+
+function getDepartmentDetails(id: number | null | undefined) {
+  if (typeof id !== 'number' || Number.isNaN(id)) {
+    return null
+  }
+  return departmentLookup[id] ?? null
+}
+
+type CellEditPayload = {
+  column: { key: string }
+  value: unknown
+}
+
+function handleCellEdit(payload: CellEditPayload) {
+  if (payload.column.key !== 'department') {
+    return
+  }
+
+  const normalizedValue =
+    typeof payload.value === 'string'
+      ? payload.value.trim() === ''
+        ? null
+        : Number(payload.value)
+      : (payload.value as number | null | undefined)
+
+  const details = getDepartmentDetails(normalizedValue ?? null)
+  lastDepartmentSelection.value = details ? { id: details.id, name: details.name } : null
+}
 </script>
 
 <template>
@@ -82,8 +147,27 @@ const tableData = ref([
       <ExcelTable
         :columns="columns"
         v-model="tableData"
+        @cell-edit="handleCellEdit"
       />
     </div>
+    <section class="selection-summary">
+      <h2>Department selections</h2>
+      <p
+        v-if="lastDepartmentSelection"
+        class="selection-summary__hint"
+      >
+        Last change: {{ lastDepartmentSelection.name }} (ID: {{ lastDepartmentSelection.id }})
+      </p>
+      <ul>
+        <li
+          v-for="assignment in departmentAssignments"
+          :key="assignment.employee"
+        >
+          {{ assignment.employee }} → {{ assignment.departmentName }} (ID:
+          {{ assignment.departmentId ?? '—' }})
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
 
@@ -108,5 +192,32 @@ p {
   border: 1px solid #ddd;
   border-radius: 4px;
   overflow: hidden;
+}
+
+.selection-summary {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.selection-summary h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 18px;
+  color: #333;
+}
+
+.selection-summary__hint {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #555;
+}
+
+.selection-summary ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #444;
 }
 </style>
