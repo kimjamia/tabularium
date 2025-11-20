@@ -75,6 +75,7 @@ describe('TableModel merging', () => {
       { name: 'Cara', status: 'new', score: 30 },
     ], {
       updateColumns: ['status', 'score'],
+      keyColumns: ['name'],
     });
 
     expect(model.getRawData()).toEqual([
@@ -90,7 +91,7 @@ describe('TableModel merging', () => {
 
   it('requires at least one merge key column', () => {
     const model = new TableModel({ columns: mergeColumns, data: [], options: { allowAddEmptyRow: false } });
-    expect(() => model.mergeRows([], { updateColumns: ['name', 'status', 'score'] }))
+    expect(() => model.mergeRows([], { updateColumns: ['name', 'status', 'score'], keyColumns: [] }))
       .toThrow(/merge key column/i);
   });
 
@@ -104,7 +105,7 @@ describe('TableModel merging', () => {
 
     model.mergeRows([
       { name: 'Ben', status: 'updated', score: 25 },
-    ], { updateColumns: ['status', 'score'] });
+    ], { updateColumns: ['status', 'score'], keyColumns: ['name'] });
 
     expect(model.getRawData()).toEqual([
       { name: 'Ben', status: 'updated', score: 25 },
@@ -116,6 +117,27 @@ describe('TableModel merging', () => {
     model.redo();
     expect(model.getRawData()).toEqual([
       { name: 'Ben', status: 'updated', score: 25 },
+    ]);
+  });
+
+  it('leaves neutral columns unchanged when not selected', () => {
+    const columnsWithNotes = [
+      ...mergeColumns,
+      { key: 'notes', label: 'Notes' },
+    ];
+
+    const rows = [
+      { name: 'Dana', status: 'draft', score: 5, notes: 'keep me' },
+    ];
+
+    const model = new TableModel({ columns: columnsWithNotes, data: rows, options: { allowAddEmptyRow: false } });
+
+    model.mergeRows([
+      { name: 'Dana', status: 'ready', score: 5, notes: 'overwrite' },
+    ], { updateColumns: ['status'], keyColumns: ['name'] });
+
+    expect(model.getRawData()).toEqual([
+      { name: 'Dana', status: 'ready', score: 5, notes: 'keep me' },
     ]);
   });
 });

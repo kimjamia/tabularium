@@ -58,7 +58,7 @@ const columns = [
 ]
 
 type ExcelTableInstance = InstanceType<typeof ExcelTable> & {
-  mergeRows: (rows: Record<string, unknown>[], options: { updateColumns: string[] }) => Promise<unknown> | unknown
+  mergeRows: (rows: Record<string, unknown>[], options: { updateColumns: string[]; keyColumns?: string[] }) => Promise<unknown> | unknown
 }
 
 const tableRef = ref<ExcelTableInstance | null>(null)
@@ -117,29 +117,30 @@ const departmentAssignments = computed(() =>
 const isMergeModalOpen = ref(false)
 const mergeTableInstanceKey = ref(0)
 const mergeTableData = ref<Record<string, unknown>[]>([])
-const initialUpdateColumns = columns.slice(1).map((column) => column.key)
+const columnKeys = columns.map((column) => column.key)
 const updateColumnsSelection = ref<string[]>(
-  initialUpdateColumns.length > 0 ? [...initialUpdateColumns] : columns.slice(0, Math.max(columns.length - 1, 1)).map((column) => column.key),
+  columnKeys.length > 1 ? columnKeys.slice(1) : columnKeys.slice(0, 1),
+)
+const keyColumnsSelection = ref<string[]>(columnKeys.length > 0 ? [columnKeys[0]] : [])
+const updateColumnSet = computed(() => new Set(updateColumnsSelection.value))
+const keyColumnSet = computed(() => new Set(keyColumnsSelection.value))
+const selectedUpdateColumns = computed(() => columns.filter((column) => updateColumnSet.value.has(column.key)))
+const selectedKeyColumns = computed(() => columns.filter((column) => keyColumnSet.value.has(column.key)))
+const neutralColumns = computed(() =>
+  columns.filter((column) => !updateColumnSet.value.has(column.key) && !keyColumnSet.value.has(column.key)),
 )
 
-if (updateColumnsSelection.value.length === columns.length) {
-  updateColumnsSelection.value.pop()
-}
-
-const updateColumnSet = computed(() => new Set(updateColumnsSelection.value))
-const mergeKeyColumns = computed(() => columns.filter((column) => !updateColumnSet.value.has(column.key)))
-
-const mergeColumnConstraintMessage = computed(() => {
-  if (updateColumnSet.value.size === 0) {
+const mergeSelectionWarning = computed(() => {
+  if (updateColumnsSelection.value.length === 0) {
     return 'Select at least one column to update.'
   }
-  if (mergeKeyColumns.value.length === 0) {
-    return 'At least one column must remain unchecked to act as the merge key.'
+  if (keyColumnsSelection.value.length === 0) {
+    return 'Select at least one merge key column.'
   }
   return ''
 })
 
-const canExecuteMerge = computed(() => mergeColumnConstraintMessage.value === '')
+const canExecuteMerge = computed(() => mergeSelectionWarning.value === '')
 const mergeError = ref('')
 
 const lastDepartmentSelection = ref<{ id: number; name: string } | null>(null)
@@ -187,50 +188,68 @@ function closeMergeModal() {
   isMergeModalOpen.value = false
 }
 
-function toggleColumnForUpdate(columnKey: string) {
-  const next = [...updateColumnsSelection.value]
-  const currentIndex = next.indexOf(columnKey)
+function sortKeysByColumnOrder(keys: string[]) {
+  const keySet = new Set(keys)
+  return columns.filter((column) => keySet.has(column.key)).map((column) => column.key)
+}
 
-  if (currentIndex >= 0) {
-    if (next.length === 1) {
+function toggleUpdateColumn(columnKey: string) {
+  const selection = new Set(updateColumnsSelection.value)
+  if (selection.has(columnKey)) {
+    if (selection.size === 1) {
       mergeError.value = 'Keep at least one column selected for updates.'
       return
     }
-    next.splice(currentIndex, 1)
+    selection.delete(columnKey)
   } else {
-    const nextSelectedCount = next.length + 1
-    if (columns.length - nextSelectedCount < 1) {
-      mergeError.value = 'At least one merge key column is required.'
-      return
-    }
-    next.push(columnKey)
+    selection.add(columnKey)
   }
-
   mergeError.value = ''
-  updateColumnsSelection.value = next
+  updateColumnsSelection.value = sortKeysByColumnOrder(Array.from(selection))
 }
 
-function isColumnSelected(columnKey: string) {
+function toggleKeyColumn(columnKey: string) {
+  const selection = new Set(keyColumnsSelection.value)
+  if (selection.has(columnKey)) {
+    if (selection.size === 1) {
+      mergeError.value = 'Keep at least one merge key column.'
+      return
+    }
+    selection.delete(columnKey)
+  } else {
+    selection.add(columnKey)
+  }
+  mergeError.value = ''
+  keyColumnsSelection.value = sortKeysByColumnOrder(Array.from(selection))
+}
+
+function isUpdateColumnSelected(columnKey: string) {
   return updateColumnSet.value.has(columnKey)
 }
 
-function isCheckboxDisabled(columnKey: string) {
-  if (updateColumnSet.value.has(columnKey)) {
-    return updateColumnsSelection.value.length === 1
-  }
-  return columns.length - (updateColumnsSelection.value.length + 1) < 1
+function isKeyColumnSelected(columnKey: string) {
+  return keyColumnSet.value.has(columnKey)
+}
+
+function isUpdateCheckboxDisabled(columnKey: string) {
+  return updateColumnSet.value.has(columnKey) && updateColumnsSelection.value.length === 1
+}
+
+function isKeyCheckboxDisabled(columnKey: string) {
+  return keyColumnSet.value.has(columnKey) && keyColumnsSelection.value.length === 1
 }
 
 async function handleMergeSubmit() {
   mergeError.value = ''
   if (!canExecuteMerge.value) {
-    mergeError.value = mergeColumnConstraintMessage.value
+    mergeError.value = mergeSelectionWarning.value
     return
   }
 
   try {
     await tableRef.value?.mergeRows(mergeTableData.value, {
       updateColumns: [...updateColumnsSelection.value],
+      keyColumns: [...keyColumnsSelection.value],
     })
     closeMergeModal()
   } catch (error) {
@@ -292,47 +311,78 @@ async function handleMergeSubmit() {
         aria-modal="true"
         aria-label="Merge source data"
       >
-        <header class="merge-modal__header">
-          <h2>Merge source data</h2>
-          <button
-            type="button"
-            class="merge-modal__close"
-            @click="closeMergeModal"
-          >
-            Close
-          </button>
-        </header>
-        <p class="merge-modal__intro">
-          Paste the latest source data into the table below. Use the checkboxes to choose which columns should be updated.
-        </p>
-        <div class="merge-modal__selectors">
-          <div class="merge-column-headers">
-            <div
-              v-for="column in columns"
-              :key="column.key"
-              class="merge-column-headers__cell"
+          <header class="merge-modal__header">
+            <h2>Merge source data</h2>
+            <button
+              type="button"
+              class="merge-modal__close"
+              @click="closeMergeModal"
             >
-              <label>
-                <input
-                  type="checkbox"
-                  :checked="isColumnSelected(column.key)"
-                  :disabled="isCheckboxDisabled(column.key)"
-                  @change="() => toggleColumnForUpdate(column.key)"
-                />
-                <span>{{ column.label }}</span>
-              </label>
+              Close
+            </button>
+          </header>
+          <p class="merge-modal__intro">
+            Paste the latest source data into the table below. Use the checkboxes to choose which columns should be updated.
+          </p>
+          <div class="merge-modal__selectors">
+            <div class="merge-selection-panels">
+              <div class="merge-selection-panel">
+                <h3>Columns to update</h3>
+                <p class="merge-modal__hint">
+                  Only these columns are updated when matching rows are found.
+                </p>
+                <div class="merge-column-headers">
+                  <div
+                    v-for="column in columns"
+                    :key="`update-${column.key}`"
+                    class="merge-column-headers__cell"
+                  >
+                    <label>
+                      <input
+                        type="checkbox"
+                        :checked="isUpdateColumnSelected(column.key)"
+                        :disabled="isUpdateCheckboxDisabled(column.key)"
+                        @change="() => toggleUpdateColumn(column.key)"
+                      />
+                      <span>{{ column.label }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="merge-selection-panel">
+                <h3>Merge key columns</h3>
+                <p class="merge-modal__hint">
+                  Rows are matched using these columns (order does not matter).
+                </p>
+                <div class="merge-column-headers">
+                  <div
+                    v-for="column in columns"
+                    :key="`key-${column.key}`"
+                    class="merge-column-headers__cell"
+                  >
+                    <label>
+                      <input
+                        type="checkbox"
+                        :checked="isKeyColumnSelected(column.key)"
+                        :disabled="isKeyCheckboxDisabled(column.key)"
+                        @change="() => toggleKeyColumn(column.key)"
+                      />
+                      <span>{{ column.label }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
+            <p class="merge-modal__hint">
+              Columns not selected in either list remain unchanged even if the source data differs.
+            </p>
+            <p
+              v-if="mergeSelectionWarning"
+              class="merge-modal__hint is-warning"
+            >
+              {{ mergeSelectionWarning }}
+            </p>
           </div>
-          <p class="merge-modal__hint">
-            Checked columns are updated; unchecked columns become the merge key.
-          </p>
-          <p
-            v-if="mergeColumnConstraintMessage"
-            class="merge-modal__hint is-warning"
-          >
-            {{ mergeColumnConstraintMessage }}
-          </p>
-        </div>
         <div class="merge-modal__table">
           <ExcelTable
             :key="mergeTableInstanceKey"
@@ -341,10 +391,18 @@ async function handleMergeSubmit() {
           />
         </div>
         <div class="merge-modal__summary">
-          <p>
-            Merge keys:
-            <strong>{{ mergeKeyColumns.map((column) => column.label).join(', ') || '—' }}</strong>
-          </p>
+            <p>
+              Updating:
+              <strong>{{ selectedUpdateColumns.map((column) => column.label).join(', ') || '—' }}</strong>
+            </p>
+            <p>
+              Merge keys:
+              <strong>{{ selectedKeyColumns.map((column) => column.label).join(', ') || '—' }}</strong>
+            </p>
+            <p v-if="neutralColumns.length">
+              Unchanged columns:
+              <strong>{{ neutralColumns.map((column) => column.label).join(', ') }}</strong>
+            </p>
           <p
             v-if="mergeError"
             class="merge-modal__error"
@@ -507,6 +565,26 @@ p {
 
 .merge-modal__selectors {
   margin-bottom: 12px;
+}
+
+.merge-selection-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.merge-selection-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fefefe;
+}
+
+.merge-selection-panel h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: #1f2937;
 }
 
 .merge-column-headers {

@@ -522,7 +522,7 @@ export class TableModel {
     return rawValue;
   }
 
-  mergeRows(sourceRows, { updateColumns = [], source = CHANGE_SOURCES.MERGE } = {}) {
+  mergeRows(sourceRows, { updateColumns = [], keyColumns = [], source = CHANGE_SOURCES.MERGE } = {}) {
     if (!Array.isArray(sourceRows)) {
       throw new Error('mergeRows expects an array of source rows');
     }
@@ -535,12 +535,18 @@ export class TableModel {
     }
 
     const updateColumnSet = new Set(validUpdateColumns);
-    const keyColumns = this.columns
-      .map((column) => column.key)
-      .filter((key) => !updateColumnSet.has(key));
+    const validKeyColumns = Array.isArray(keyColumns)
+      ? keyColumns.filter((key) => this.columnIndex.has(key))
+      : [];
+    let resolvedKeyColumns = validKeyColumns;
+    if (resolvedKeyColumns.length === 0) {
+      resolvedKeyColumns = this.columns
+        .map((column) => column.key)
+        .filter((key) => !updateColumnSet.has(key));
+    }
 
-    if (keyColumns.length === 0) {
-      throw new Error('mergeRows requires at least one merge key column. Deselect at least one column.');
+    if (resolvedKeyColumns.length === 0) {
+      throw new Error('mergeRows requires at least one merge key column.');
     }
 
     const normalizedSources = sourceRows.map((row) => this._normalizeRow(row));
@@ -550,7 +556,7 @@ export class TableModel {
 
     const existingKeyIndex = new Map();
     this.rows.forEach((row, index) => {
-      const key = serializeMergeKey(row, keyColumns);
+      const key = serializeMergeKey(row, resolvedKeyColumns);
       if (!existingKeyIndex.has(key)) {
         existingKeyIndex.set(key, []);
       }
@@ -564,11 +570,11 @@ export class TableModel {
       removed: [],
       updated: [],
       updateColumns: Array.from(updateColumnSet),
-      keyColumns: keyColumns.slice(),
+      keyColumns: resolvedKeyColumns.slice(),
     };
 
     normalizedSources.forEach((sourceRow, position) => {
-      const key = serializeMergeKey(sourceRow, keyColumns);
+      const key = serializeMergeKey(sourceRow, resolvedKeyColumns);
       const candidateIndices = existingKeyIndex.get(key) ?? [];
       const availableIndex = candidateIndices.find((idx) => !usedRowIndices.has(idx));
 
@@ -604,7 +610,7 @@ export class TableModel {
 
     this.rows.forEach((row, index) => {
       if (!usedRowIndices.has(index)) {
-        const key = serializeMergeKey(row, keyColumns);
+        const key = serializeMergeKey(row, resolvedKeyColumns);
         mergeSummary.removed.push({ key, rowIndex: index });
       }
     });
