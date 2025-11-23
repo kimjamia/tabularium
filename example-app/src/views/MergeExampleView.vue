@@ -2,7 +2,29 @@
 import { computed, ref } from 'vue'
 import ExcelTable from 'vue3-excel-table'
 
-const departmentOptions = [
+type DepartmentOption = {
+  id: number
+  name: string
+}
+
+type ColumnDefinition = {
+  key: string
+  label: string
+  width?: number
+  unique?: boolean
+  type?: 'number' | 'dropdown'
+  dropdown?: {
+    options: DepartmentOption[]
+    valueField: string
+    displayField: string
+    keyFields?: string[]
+    pasteMode?: 'both'
+    allowEmpty?: boolean
+    emptyLabel?: string
+  }
+}
+
+const departmentOptions: DepartmentOption[] = [
   { id: 1, name: 'Engineering' },
   { id: 2, name: 'Marketing' },
   { id: 3, name: 'Sales' },
@@ -10,12 +32,12 @@ const departmentOptions = [
   { id: 5, name: 'Finance' },
 ]
 
-const departmentLookup = departmentOptions.reduce<Record<number, { id: number; name: string }>>((acc, option) => {
+const departmentLookup = departmentOptions.reduce<Record<number, DepartmentOption>>((acc, option) => {
   acc[option.id] = option
   return acc
 }, {})
 
-const columns = [
+const columns: ColumnDefinition[] = [
   {
     key: 'name',
     label: 'Name',
@@ -119,7 +141,8 @@ const columnKeys = columns.map((column) => column.key)
 const updateColumnsSelection = ref<string[]>(
   columnKeys.length > 1 ? columnKeys.slice(1) : columnKeys.slice(0, 1),
 )
-const keyColumnsSelection = ref<string[]>(columnKeys.length > 0 ? [columnKeys[0]] : [])
+const initialKeyColumn = columnKeys[0]
+const keyColumnsSelection = ref<string[]>(initialKeyColumn ? [initialKeyColumn] : [])
 const updateColumnSet = computed(() => new Set(updateColumnsSelection.value))
 const keyColumnSet = computed(() => new Set(keyColumnsSelection.value))
 const selectedUpdateColumns = computed(() => columns.filter((column) => updateColumnSet.value.has(column.key)))

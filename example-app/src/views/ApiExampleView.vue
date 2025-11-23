@@ -6,6 +6,11 @@ import { EMPLOYEE_STATUSES, FakeEmployeeApi, type EmployeeRow } from '../service
 
 type TableRow = EmployeeRow & { __tempKey?: string }
 
+type TableButtonContext = {
+  row?: TableRow
+  rowIndex?: number
+}
+
 type TableChangeSummary = {
   source?: string
   type?: string
@@ -15,7 +20,8 @@ type TableChangeSummary = {
   }>
 }
 
-const DATA_KEYS: Array<keyof EmployeeRow> = ['name', 'role', 'status', 'salary', 'location']
+const DATA_KEYS = ['name', 'role', 'status', 'salary', 'location'] as const
+type DataKey = (typeof DATA_KEYS)[number]
 let tempRowCounter = 0
 
 const api = new FakeEmployeeApi()
@@ -66,19 +72,19 @@ const columns = [
     label: 'Location',
     width: 200,
   },
-  {
-    key: 'actions',
-    label: 'Actions',
-    type: 'button',
-    width: 140,
-    editable: false,
-    sortable: false,
-    filterable: false,
-    button: {
-      label: () => 'Delete row',
-      onClick: ({ row, rowIndex }) => handleDeleteRow(row as TableRow, rowIndex),
+    {
+      key: 'actions',
+      label: 'Actions',
+      type: 'button',
+      width: 140,
+      editable: false,
+      sortable: false,
+      filterable: false,
+      button: {
+        label: () => 'Delete row',
+        onClick: ({ row, rowIndex }: TableButtonContext) => handleDeleteRow(row, rowIndex),
+      },
     },
-  },
 ]
 
 const tableOptions = {
@@ -194,24 +200,25 @@ function findRowByIndex(rowIndex: number) {
 }
 
 function buildRowPayload(row: TableRow): Partial<EmployeeRow> {
-  const payload: Partial<EmployeeRow> = {}
-  DATA_KEYS.forEach((key) => {
-    payload[key] = row[key]
+  const payload: Partial<Record<DataKey, EmployeeRow[DataKey]>> = {}
+  DATA_KEYS.forEach((key: DataKey) => {
+    payload[key] = row[key] as EmployeeRow[DataKey]
   })
-  return payload
+  return payload as Partial<EmployeeRow>
 }
 
-function applyCreatedRow(tempKey: string, created: EmployeeRow): TableRow | undefined {
+  function applyCreatedRow(tempKey: string, created: EmployeeRow): TableRow | undefined {
   const localRow = findRowByTempKey(tempKey)
   if (localRow) {
-    const snapshot: Partial<TableRow> = {}
-    DATA_KEYS.forEach((key) => {
-      snapshot[key] = localRow[key]
-    })
+      const snapshot: Partial<Record<DataKey, EmployeeRow[DataKey]>> = {}
+      DATA_KEYS.forEach((key: DataKey) => {
+        snapshot[key] = localRow[key] as EmployeeRow[DataKey]
+      })
     Object.assign(localRow, created)
-    DATA_KEYS.forEach((key) => {
-      if (snapshot[key] !== undefined) {
-        localRow[key] = snapshot[key] as TableRow[typeof key]
+    DATA_KEYS.forEach((key: DataKey) => {
+      const preserved = snapshot[key]
+      if (preserved !== undefined) {
+        ;(localRow as Record<DataKey, EmployeeRow[DataKey]>)[key] = preserved
       }
     })
     delete localRow.__tempKey
@@ -226,10 +233,14 @@ async function syncChangesAfterCreation(created: EmployeeRow, localRow?: TableRo
   if (!localRow || !created.id) {
     return
   }
-  const updates = DATA_KEYS.filter((key) => localRow[key] !== created[key]).map((key) => ({
-    key,
-    value: localRow[key],
-  }))
+    const localSnapshot = localRow as Record<DataKey, EmployeeRow[DataKey]>
+    const createdSnapshot = created as Record<DataKey, EmployeeRow[DataKey]>
+    const updates = DATA_KEYS.filter((key: DataKey) => localSnapshot[key] !== createdSnapshot[key]).map(
+      (key: DataKey) => ({
+        key,
+        value: localSnapshot[key],
+      }),
+    )
 
   if (updates.length === 0) {
     replaceRow({ ...localRow })

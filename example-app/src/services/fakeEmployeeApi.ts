@@ -67,56 +67,56 @@ export class FakeEmployeeApi {
     this.lastId = this.rows.reduce((max, row) => Math.max(max, row.id), 0)
   }
 
-  async listRows(): Promise<EmployeeRow[]> {
-    await this.simulateLatency()
-    return this.rows.map((row) => ({ ...row }))
-  }
-
-  async createRow(partial: Partial<EmployeeRow> = {}): Promise<EmployeeRow> {
-    await this.simulateLatency()
-    const row: EmployeeRow = {
-      id: this.nextId(),
-      name: partial.name ?? 'New hire',
-      role: partial.role ?? 'Generalist',
-      status: partial.status ?? 'Active',
-      salary: typeof partial.salary === 'number' ? partial.salary : 65000,
-      location: partial.location ?? 'Remote',
+    async listRows(): Promise<EmployeeRow[]> {
+      await this.simulateLatency()
+      return this.rows.map((row) => ({ ...row }))
     }
 
-    this.rows.push(row)
-    return { ...row }
-  }
+    async createRow(partial: Partial<EmployeeRow> = {}): Promise<EmployeeRow> {
+      await this.simulateLatency()
+      const row: EmployeeRow = {
+        id: this.nextId(),
+        name: partial.name ?? 'New hire',
+        role: partial.role ?? 'Generalist',
+        status: partial.status ?? 'Active',
+        salary: typeof partial.salary === 'number' ? partial.salary : 65000,
+        location: partial.location ?? 'Remote',
+      }
 
-  async updateCell<K extends keyof EmployeeRow>(id: number, columnKey: K, value: EmployeeRow[K]): Promise<EmployeeRow> {
-    await this.simulateLatency()
-    const target = this.rows.find((row) => row.id === id)
-
-    if (!target) {
-      throw new Error(`Row with id ${id} was not found`)
+      this.rows.push(row)
+      return { ...row }
     }
 
-    if (columnKey === 'id') {
-      throw new Error('The id column is read-only')
-    }
+    async updateCell<K extends keyof EmployeeRow>(id: number, columnKey: K, value: EmployeeRow[K]): Promise<EmployeeRow> {
+      await this.simulateLatency()
+      const target = this.rows.find((row) => row.id === id)
 
-    target[columnKey] = value
-    return { ...target }
-  }
+      if (!target) {
+        throw new Error(`Row with id ${id} was not found`)
+      }
+
+      if (columnKey === 'id') {
+        throw new Error('The id column is read-only')
+      }
+
+      target[columnKey] = value
+      return { ...target }
+    }
 
     async deleteRow(id: number): Promise<EmployeeRow> {
-    await this.simulateLatency()
-    const index = this.rows.findIndex((row) => row.id === id)
+      await this.simulateLatency()
+      const index = this.rows.findIndex((row) => row.id === id)
 
-    if (index === -1) {
-      throw new Error(`Row with id ${id} was not found`)
-    }
+      if (index === -1) {
+        throw new Error(`Row with id ${id} was not found`)
+      }
 
       const [removed] = this.rows.splice(index, 1)
       if (!removed) {
         throw new Error(`Row with id ${id} could not be removed`)
       }
       return { ...removed }
-  }
+    }
 
   private nextId(): number {
     this.lastId += 1
