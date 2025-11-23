@@ -103,7 +103,7 @@ export class FakeEmployeeApi {
     return { ...target }
   }
 
-  async deleteRow(id: number): Promise<EmployeeRow> {
+    async deleteRow(id: number): Promise<EmployeeRow> {
     await this.simulateLatency()
     const index = this.rows.findIndex((row) => row.id === id)
 
@@ -111,8 +111,11 @@ export class FakeEmployeeApi {
       throw new Error(`Row with id ${id} was not found`)
     }
 
-    const [removed] = this.rows.splice(index, 1)
-    return { ...removed }
+      const [removed] = this.rows.splice(index, 1)
+      if (!removed) {
+        throw new Error(`Row with id ${id} could not be removed`)
+      }
+      return { ...removed }
   }
 
   private nextId(): number {
